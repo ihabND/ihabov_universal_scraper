@@ -40,12 +40,17 @@ Then open `http://127.0.0.1:8000/docs` and try the `/scrape` endpoint.
 - [Step 12: Reuse one HTTP session](#step-12-reuse-one-http-session)
 - [Step 13: Retry with backoff](#step-13-retry-with-backoff)
 - [Step 14: Rate limiting](#step-14-rate-limiting)
-- [Step 15: Caching](#step-15-caching)
-- [Step 16 (optional, advanced): Switch to async](#step-16-optional-advanced-switch-to-async)
+- [Step 15: Caching with Redis](#step-15-caching-with-redis)
+- [Step 16: Use a proxy](#step-16-use-a-proxy)
+- [Step 17: Load pages in a real browser with Playwright](#step-17-load-pages-in-a-real-browser-with-playwright)
+- [Step 18: Fall back to the browser when the fast fetch fails](#step-18-fall-back-to-the-browser-when-the-fast-fetch-fails)
+- [Step 19: Add a "Use JavaScript" checkbox](#step-19-add-a-use-javascript-checkbox)
+- [Step 20: Deploy the browser to Fly.io](#step-20-deploy-the-browser-to-flyio)
+- [Step 21 (optional, advanced): Switch to async](#step-21-optional-advanced-switch-to-async)
 
 **Part 6: Tests and docs**
-- [Step 17: Unit tests with pytest](#step-17-unit-tests-with-pytest)
-- [Step 18: Write a README](#step-18-write-a-readme)
+- [Step 22: Unit tests with pytest](#step-22-unit-tests-with-pytest)
+- [Step 23: Write a README](#step-23-write-a-readme)
 
 ---
 
@@ -818,6 +823,8 @@ git commit -m "Harden scraper: SSRF guard, timeouts, proper errors, cleaner text
 
 These steps matter once other people (or many requests) use the API.
 
+> Your code has changed since Part 4: `main.py` now has a `scrape()` helper that both the API (`/scrape`) and the website (`POST /`) use, plus API key checks from `auth.py`. The steps below build on that version.
+
 ## Step 12: Reuse one HTTP session
 
 **Problem:** `requests.get(...)` creates a brand-new connection (DNS lookup, TCP handshake, TLS handshake) on every call. A `Session` keeps connections open and reuses them, which is much faster when you hit the same site repeatedly.
@@ -892,7 +899,7 @@ def get_with_retries(url: str) -> requests.Response:
 
 ## Step 14: Rate limiting
 
-**Problem:** Without limits, anyone can use your server as a free, anonymous proxy, or flood it with requests.
+**Problem:** Even with API keys, one key (or one person hammering the website form) can flood your server, run up your Fly bill, and get your server's IP banned by the sites you scrape.
 
 **14a.** Add `slowapi` to `requirements.txt` and install it:
 
@@ -900,87 +907,688 @@ def get_with_retries(url: str) -> requests.Response:
 pip install slowapi
 ```
 
-**14b.** In `main.py`, add the imports:
+**14b.** In `main.py`, add the imports (`Request` is already imported):
 
 ```python
-from fastapi import FastAPI, HTTPException, Request
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 ```
 
-**14c.** Right after `app = FastAPI(...)`, set up the limiter:
+**14c.** On Fly.io, every request reaches your app through Fly's proxy. The address your app sees is the proxy's (like the `172.16.48.162` in your `fly logs`), so a plain per-IP limit would put **all users into one shared limit**. Fly sends the real address in the `Fly-Client-IP` header. Right after `app = FastAPI(...)`:
 
 ```python
-limiter = Limiter(key_func=get_remote_address)  # limit per client IP
+def client_ip(request: Request) -> str:
+    # Behind Fly's proxy the socket address is the proxy; the real one is in this header.
+    return request.headers.get("fly-client-ip") or get_remote_address(request)
+
+
+limiter = Limiter(key_func=client_ip)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 ```
 
-**14d.** Decorate the endpoint and add a `request: Request` parameter. **slowapi requires this parameter**, even though you don't use it yourself:
+> Trusting a header is only safe because Fly's proxy overwrites it. When you run locally, there is no header and it falls back to the normal address.
+
+**14d.** Decorate both scraping endpoints. The endpoint needs a `request: Request` parameter. **slowapi requires this parameter**, even though you don't use it yourself:
 
 ```python
-@app.get("/scrape", response_model=ScrapeResponse)
+@app.get("/scrape", response_model=ScrapeResponse,
+         dependencies=[Depends(require_api_key)])
 @limiter.limit("10/minute")
 def scrape_url(request: Request, url: str, mode: Literal["text", "html"] = "text"):
     ...
+
+
+@app.post("/", response_class=HTMLResponse)
+@limiter.limit("10/minute")
+def index_submit(request: Request, ...):  # already has `request`
+    ...
 ```
 
-> Decorator order matters: `@app.get` must be on top and `@limiter.limit` below it.
+> Decorator order matters: `@app.get` / `@app.post` must be on top and `@limiter.limit` below it. Keep `dependencies=[Depends(require_api_key)]`, otherwise `/scrape` loses its API key check.
 
 Test it by calling the endpoint 11 times in a minute. The 11th call should return `429 Too Many Requests`.
 
+> For now, each Fly machine counts separately (you have two, so the real limit can be up to 20/minute). Step 15e fixes that with Redis.
+
 ---
 
-## Step 15: Caching
+## Step 15: Caching with Redis
 
-**Problem:** If ten people scrape the same page within a minute, you fetch it ten times. A short-lived cache avoids repeated work and is kinder to the target site.
+**Problem:** If ten people scrape the same page within a minute, you fetch it ten times. A short-lived cache avoids repeated work and is kinder to the target site. Once the browser fallback exists (Step 18), a cache hit saves several seconds.
 
-**15a.** Add `cachetools` to `requirements.txt` and install it:
+**Why Redis and not a Python dict:** a cache inside the Python process has two problems on Fly:
+
+1. **You have two machines.** Each would have its own cache, so a page cached on machine A is still re-fetched when the next request lands on machine B.
+2. **Machines auto-stop when idle.** Every stop wipes an in-memory cache, and yours stop after a few minutes without traffic.
+
+Redis is a separate, very fast key–value server. Every machine talks to the same Redis, and it survives your app restarting. It also has built-in expiry: you store a value with "delete this after 300 seconds" and Redis handles the rest.
+
+**15a.** Add `redis` to `requirements.txt` and install it:
 
 ```bash
-pip install cachetools
+pip install redis
 ```
 
-**15b.** In `main.py`, add:
+**15b.** Run Redis locally. The easiest way on Windows is Docker Desktop:
 
-```python
-import threading
-
-from cachetools import TTLCache
-
-# Up to 256 results, each kept for 5 minutes
-cache: TTLCache = TTLCache(maxsize=256, ttl=300)
-cache_lock = threading.Lock()  # sync endpoints run in multiple threads
+```powershell
+docker run -d --name scraper-redis -p 6379:6379 redis:7-alpine
+$env:REDIS_URL = "redis://localhost:6379/0"
+uvicorn main:app --reload
 ```
 
-**15c.** In the endpoint, check the cache after normalizing the URL and store the result before returning:
+The container keeps running in the background. Start it again after a reboot with `docker start scraper-redis`.
+
+> No Docker? The code below works without Redis too. If `REDIS_URL` isn't set, caching is simply turned off.
+
+**15c.** Create a new file `cache.py`:
 
 ```python
-    cache_key = (normalized, mode)
-    with cache_lock:
-        cached = cache.get(cache_key)
+import logging
+import os
+
+import redis
+from redis.exceptions import RedisError
+
+logger = logging.getLogger(__name__)
+
+CACHE_TTL_SECONDS = 300        # successful pages: 5 minutes
+FAILED_CACHE_TTL_SECONDS = 30  # pages that returned 4xx/5xx: 30 seconds
+
+REDIS_URL = os.environ.get("REDIS_URL")
+
+# decode_responses=True gives back str instead of bytes.
+# Short timeouts: if Redis is slow or down, skip the cache instead of hanging the request.
+redis_client = (
+    redis.Redis.from_url(
+        REDIS_URL,
+        decode_responses=True,
+        socket_timeout=1,
+        socket_connect_timeout=1,
+    )
+    if REDIS_URL
+    else None
+)
+if redis_client is None:
+    logger.warning("REDIS_URL is not set, caching is disabled.")
+
+
+def cache_key(url: str, mode: str) -> str:
+    return f"scrape:{mode}:{url}"
+
+
+def get_cached(url: str, mode: str) -> str | None:
+    if redis_client is None:
+        return None
+    try:
+        return redis_client.get(cache_key(url, mode))
+    except RedisError as e:
+        logger.warning("Redis read failed: %s", e)
+        return None
+
+
+def set_cached(url: str, mode: str, value: str, ok: bool) -> None:
+    if redis_client is None:
+        return
+    ttl = CACHE_TTL_SECONDS if ok else FAILED_CACHE_TTL_SECONDS
+    try:
+        redis_client.set(cache_key(url, mode), value, ex=ttl)
+    except RedisError as e:
+        logger.warning("Redis write failed: %s", e)
+```
+
+Things to notice:
+
+- **Redis stores strings**, so the cache holds the response as JSON text. `cache.py` doesn't know about `ScrapeResponse`: it only moves strings in and out. That also avoids a circular import, since `main.py` imports `cache.py`.
+- **Redis errors never break a scrape.** If Redis is down, `get_cached` returns `None` (a "miss") and `set_cached` does nothing. The page is just fetched normally. This is called *failing open*, and it's the right choice for a cache. It's the opposite of the API key check, which *fails closed*.
+- **Failed pages are cached for only 30 seconds**, so a site that was briefly down isn't stuck as "down" for 5 minutes.
+- **Exceptions are never cached.** If `fetch_page` raises, nothing reaches `set_cached`.
+
+**15d.** In `main.py`, use the cache inside `scrape()`. Both the API and the website go through `scrape()`, so they share the cache:
+
+```python
+from cache import get_cached, set_cached
+
+
+def scrape(url: str, mode: Literal["text", "html"]) -> ScrapeResponse:
+    normalized = normalize_url(url)
+    if normalized is None:
+        raise InvalidURLError("Invalid URL, only HTTP and HTTPS.")
+
+    cached = get_cached(normalized, mode)
     if cached is not None:
-        return cached
+        logger.info("Cache hit for %s", normalized)
+        return ScrapeResponse.model_validate_json(cached)
 
-    # ... fetch_page / clean_html_response as before ...
-
+    response = fetch_page(normalized)
+    content = clean_html_response(response, mode)
     result = ScrapeResponse(
         url=normalized,
         status_code=response.status_code,
         ok=response.ok,
         content=content,
     )
-    with cache_lock:
-        cache[cache_key] = result
+    set_cached(normalized, mode, result.model_dump_json(), result.ok)
     return result
 ```
 
-> Think about it: should failed pages (`ok=False`) be cached? Maybe for a shorter time, or not at all. There's no single right answer.
+Test it: scrape the same URL twice. The second call should be almost instant, and the log should say `Cache hit`. You can look inside Redis too:
+
+```powershell
+docker exec -it scraper-redis redis-cli keys "scrape:*"
+docker exec -it scraper-redis redis-cli ttl "scrape:text:https://example.com/"
+```
+
+`ttl` shows how many seconds that entry has left.
+
+**15e.** Share the rate limits from Step 14 through Redis too, so both Fly machines count together. Change the limiter line in `main.py`:
+
+```python
+import os
+
+limiter = Limiter(
+    key_func=client_ip,
+    storage_uri=os.environ.get("REDIS_URL", "memory://"),
+)
+```
+
+`memory://` is slowapi's default (per-process counting), used when there's no Redis.
+
+**15f.** Create Redis on Fly.io. Fly offers managed Redis run by Upstash:
+
+```powershell
+fly redis create
+```
+
+Choose the same region as your app (`ams`). At the end it prints a URL like `redis://default:<password>@fly-<name>.upstash.io:6379`. It only works from inside your Fly apps, so it isn't exposed to the internet. Save it as a secret:
+
+```powershell
+fly secrets set REDIS_URL="redis://default:<password>@fly-<name>.upstash.io:6379" -a ihabov-universal-scraper
+```
+
+> Upstash is pay-per-use. Check the current price with `fly redis status <name>` or on Fly's pricing page. A cache this size costs very little.
 
 ---
 
-## Step 16 (optional, advanced): Switch to async
+## Step 16: Use a proxy
+
+**Problem:** Every request your scraper sends comes from one IP address: your Fly machine's, in a data center in Amsterdam. Many sites block data-center IPs outright, show them CAPTCHAs, or rate-limit per IP. A proxy sends your requests out from a different IP. *Residential* proxies use home-internet IPs, which sites rarely block.
+
+**16a.** Get a proxy URL from your provider. It looks like this:
+
+```
+http://username:password@proxy-host:port
+```
+
+It contains a password, so treat it like your API keys: **never put it in code or git.** Use an environment variable locally:
+
+```powershell
+$env:PROXY_URL = "http://username:password@proxy-host:port"
+```
+
+and a secret on Fly:
+
+```powershell
+fly secrets set PROXY_URL="http://username:password@proxy-host:port" -a ihabov-universal-scraper
+```
+
+**16b.** In `functions.py`, add `import os` to the imports, and below the constants:
+
+```python
+PROXY_URL = os.environ.get("PROXY_URL")
+
+proxies = {
+    "http": PROXY_URL,
+    "https": PROXY_URL
+} if PROXY_URL else None
+```
+
+The **keys** are the scheme of the *target* page: `"http"` is used for `http://` pages and `"https"` for `https://` pages. The **value** is the proxy's own address. One proxy normally handles both, which is why both keys point to the same URL. When `PROXY_URL` isn't set, `proxies` is `None` and requests go out directly, as before.
+
+**16c.** Pass it to the session from Step 12:
+
+```python
+session = requests.Session(impersonate="chrome", proxies=proxies)
+```
+
+Every `session.get(...)`, including the retries from Step 13, now goes through the proxy.
+
+**16d.** Check that it works. In a Python shell with `PROXY_URL` set:
+
+```python
+from functions import session
+print(session.get("https://api.ipify.org").text)
+```
+
+It should print the **proxy's** IP, not yours. Run it once without `PROXY_URL` to compare.
+
+> Why not test through `/scrape`? api.ipify.org returns plain text, and your content-type check from Step 9 rejects anything that isn't HTML with `415`.
+
+Things to know:
+
+- **If the proxy is down, requests fail** with a `RequestException`. Step 13 retries them, and then `fetch_page` raises `FetchError` (502). Once Step 18 is done, the browser gets a try too, through the same proxy.
+- **Your SSRF check still works.** `validate_url` resolves the host itself before any request is sent.
+- **Don't log `PROXY_URL`.** It contains the password. curl's error messages only include the proxy's host, which is fine to log.
+- **Rotating IPs:** most providers give you a single "gateway" URL that picks a new IP on each request, so the code above is all you need. If you instead get a list of proxy URLs, pick one per request with `random.choice(...)` and pass `proxies=` to `session.get(...)`.
+- **Residential proxies are usually billed per GB.** The Redis cache (Step 15) and blocking images in the browser (Step 17) both save you money.
+
+---
+
+## Step 17: Load pages in a real browser with Playwright
+
+**Problem:** `curl_cffi` downloads the HTML and stops there. It doesn't run JavaScript. That fails in two common cases:
+
+1. **JavaScript-rendered sites** (React, Vue, Angular, and so on). The downloaded HTML is an almost empty shell like `<div id="root"></div>`. The real content is added later by JavaScript.
+2. **Bot checks that need JavaScript**, like Cloudflare's "Just a moment..." page. These usually come back as `403` or `503`.
+
+Playwright controls a real Chromium browser. It runs the JavaScript and gives you the HTML *after* the page has been built. The catch: it's slow (2–5 seconds per page) and uses a lot of memory (roughly 150–300 MB per open browser). So it's used only as a fallback (Step 18) or when the user asks for it (Step 19).
+
+**17a.** Add `playwright` to `requirements.txt`, install it, and download Chromium:
+
+```bash
+pip install playwright
+playwright install chromium
+```
+
+**17b.** In `functions.py`, add the imports and constants. `unquote` joins the existing `urllib.parse` import:
+
+```python
+import threading
+from dataclasses import dataclass
+from urllib.parse import urlsplit, urlunsplit, urljoin, quote, unquote
+
+from playwright.sync_api import Error as PlaywrightError
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from playwright.sync_api import sync_playwright
+
+BROWSER_TIMEOUT_MS = 20_000       # max time to load the page
+NETWORK_IDLE_TIMEOUT_MS = 5_000   # extra time for JavaScript to fetch its data
+BLOCKED_RESOURCE_TYPES = {"image", "media", "font"}  # not needed for text or HTML
+MAX_BROWSERS = 2                  # browsers are memory-hungry, cap how many run at once
+
+browser_slots = threading.BoundedSemaphore(MAX_BROWSERS)
+```
+
+A **semaphore** is a counter of free slots. `acquire()` takes a slot and waits if none are free; `release()` gives it back. It stops 20 simultaneous requests from starting 20 browsers and running your machine out of memory.
+
+**17c.** Add a small class for the browser's result. `clean_html_response` only uses `.content`, and `scrape()` uses `.status_code` and `.ok`. So if the browser result has those three attributes, the rest of your code works with it unchanged. This is called *duck typing*:
+
+```python
+@dataclass
+class BrowserResponse:
+    """Has the same fields as a curl_cffi Response, so the rest of the code can use either."""
+    status_code: int
+    content: bytes
+
+    @property
+    def ok(self) -> bool:
+        return self.status_code < 400
+```
+
+**17d.** Playwright takes the proxy in a different format from curl_cffi: the server, username, and password as separate fields. Convert `PROXY_URL` from Step 16:
+
+```python
+def playwright_proxy() -> dict | None:
+    if not PROXY_URL:
+        return None
+    parts = urlsplit(PROXY_URL)
+    proxy = {"server": f"{parts.scheme}://{parts.hostname}:{parts.port}"}
+    if parts.username:
+        proxy["username"] = unquote(parts.username)
+        proxy["password"] = unquote(parts.password or "")
+    return proxy
+```
+
+> Chromium doesn't support SOCKS5 proxies with a username and password. If your provider offers both, use the `http://` URL.
+
+**17e.** Protect against SSRF in the browser. This is **important**. Your Step 6 check covers the URL *you* request. A browser, though, fetches many things on its own: scripts, iframes, images, redirects. A malicious page could make it request `http://169.254.169.254/` or an internal address on Fly's private network. There are two defenses:
+
+1. **Check every request the browser makes, and block the ones to non-public hosts.** Playwright's `page.route` lets you look at each request before it's sent. The same hook also blocks images, videos, and fonts, which saves memory, time, and proxy bandwidth.
+2. **Check the redirects afterwards.** Playwright's documentation says: *"The handler will only be called for the first url if the response is a redirect."* So if a page redirects to an internal address, you can't stop that request. But you *can* refuse to return what came back. After loading, check the final URL and every redirect hop.
+
+```python
+def is_allowed_browser_request(url: str) -> bool:
+    try:
+        validate_url(url)
+    except ScrapeError:
+        return False
+    return True
+
+
+def handle_browser_route(route) -> None:
+    request = route.request
+    if (request.resource_type in BLOCKED_RESOURCE_TYPES
+            or not is_allowed_browser_request(request.url)):
+        route.abort()
+    else:
+        route.continue_()
+```
+
+**17f.** The function that loads a page in the browser:
+
+```python
+def fetch_with_browser(url: str) -> BrowserResponse:
+    validate_url(url)
+    if not browser_slots.acquire(timeout=BROWSER_TIMEOUT_MS / 1000):
+        raise FetchError("All browsers are busy, try again later.")
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(proxy=playwright_proxy())
+            try:
+                context = browser.new_context(service_workers="block")
+                page = context.new_page()
+                page.route("**/*", handle_browser_route)
+
+                response = page.goto(url, wait_until="domcontentloaded",
+                                     timeout=BROWSER_TIMEOUT_MS)
+                if response is None:
+                    raise FetchError("The browser got no response.")
+                try:
+                    # Give JavaScript a few seconds to fetch and draw the content.
+                    page.wait_for_load_state("networkidle",
+                                             timeout=NETWORK_IDLE_TIMEOUT_MS)
+                except PlaywrightTimeoutError:
+                    pass  # some pages never go idle (ads, live updates), use what we have
+
+                html = page.content()
+                status_code = response.status
+                visited_urls = [page.url]
+                request = response.request
+                while request is not None:  # walk back through the redirects
+                    visited_urls.append(request.url)
+                    request = request.redirected_from
+            finally:
+                browser.close()
+    except PlaywrightError as e:
+        logger.warning("Browser failed for %s: %s", url, e)
+        raise FetchError(f"The browser could not load the page: {e}") from e
+    finally:
+        browser_slots.release()
+
+    for visited in visited_urls:
+        validate_url(visited)  # raises BlockedURLError if a redirect went somewhere internal
+
+    content = html.encode("utf-8")
+    if len(content) > MAX_CONTENT_BYTES:
+        raise ContentTooLargeError("Page is too large.")
+    return BrowserResponse(status_code=status_code, content=content)
+```
+
+What each part does:
+
+- **`browser_slots.acquire(...)` / `release()`:** waits up to 20 seconds for a free browser slot. `release()` is in a `finally` block, so the slot is given back even when something fails.
+- **`with sync_playwright()` and `browser.close()`:** each call starts a fresh browser and always closes it. Starting a browser takes about 1 second. That's acceptable for a fallback, and it means no browser sits in memory between requests. (Step 21 shows how to keep one browser open instead.)
+- **`service_workers="block"`:** service workers can make requests that `page.route` never sees, so they're turned off.
+- **`wait_until="domcontentloaded"`, then `networkidle`:** the page's HTML has loaded, and then the browser waits up to 5 more seconds until the network goes quiet, meaning JavaScript has finished loading its data.
+- **`PlaywrightTimeoutError` is a subclass of `PlaywrightError`.** A timeout in `goto` is therefore caught by the outer `except` and becomes a normal `FetchError` (502).
+- **`page.content()`** returns the HTML *as it is now*, after JavaScript has run, not the original download.
+
+**17g.** Try it in a Python shell. `quotes.toscrape.com/js/` is a practice site whose quotes are added by JavaScript:
+
+```python
+from functions import fetch_page, fetch_with_browser, clean_html_response
+
+url = "https://quotes.toscrape.com/js/"
+print(clean_html_response(fetch_page(url), "text")[:5])          # no quotes
+print(clean_html_response(fetch_with_browser(url), "text")[:5])  # quotes!
+```
+
+---
+
+## Step 18: Fall back to the browser when the fast fetch fails
+
+**Problem:** You now have a fast fetcher (curl_cffi, well under a second) and a slow one that handles more sites (Playwright, 2–5 seconds). Try the fast one first, and use the browser only when the result looks wrong.
+
+When does the result "look wrong"?
+
+| Situation | Use the browser? | Why |
+|---|---|---|
+| `FetchError`: connection failed, timeout, too many redirects | Yes | TLS-level blocking sometimes only lets real browsers through |
+| Status `403`, `429` or `503` | Yes | The usual codes for bot checks (after Step 13's retries) |
+| Status `200` but almost no text | Yes | Probably a JavaScript-rendered page |
+| Other `4xx`/`5xx` (like `404`) | No | The page really is missing or broken |
+| `InvalidURLError`, `BlockedURLError`, `ContentTooLargeError`, `UnsupportedContentError` | No | A browser gives the same answer, and blocked URLs must stay blocked |
+
+**18a.** In `functions.py`:
+
+```python
+BROWSER_FALLBACK_STATUS_CODES = {403, 429, 503}
+MIN_TEXT_CHARS = 100
+
+
+def needs_browser(response: requests.Response) -> bool:
+    if response.status_code in BROWSER_FALLBACK_STATUS_CODES:
+        return True
+    if not response.ok:
+        return False
+    text = " ".join(clean_html_response(response, "text"))
+    return len(text) < MIN_TEXT_CHARS
+
+
+def fetch_page_with_fallback(url: str) -> requests.Response | BrowserResponse:
+    try:
+        response = fetch_page(url)
+    except FetchError as e:
+        logger.info("Fast fetch failed for %s (%s), trying the browser", url, e)
+        return fetch_with_browser(url)
+
+    if not needs_browser(response):
+        return response
+
+    logger.info("Got %d or too little text from %s, trying the browser",
+                response.status_code, url)
+    try:
+        return fetch_with_browser(url)
+    except ScrapeError as e:
+        logger.warning("Browser fallback failed for %s: %s", url, e)
+        return response  # the fast result is better than an error
+```
+
+Things to notice:
+
+- **Only `FetchError` is caught** in the first `try`. Every other `ScrapeError` (blocked URL, not HTML, too large) passes straight up to the user, exactly as before.
+- **If the browser also fails, return the original response.** A `403` page is still a real answer, and `ok=False` tells the user something went wrong.
+- **Why 100 characters?** example.com has about 140 characters of text, and a JavaScript shell like "You need to enable JavaScript to run this app." has about 45. Tune the number if you see wrong fallbacks in your logs.
+- `needs_browser` parses the HTML once, and `scrape()` parses it again later. That's a few milliseconds, which is tiny next to a network request.
+
+**18b.** Tell the user which fetcher was used. Add a field to `ScrapeResponse` in `main.py`:
+
+```python
+class ScrapeResponse(BaseModel):
+    url: str
+    status_code: int
+    ok: bool
+    fetched_with: Literal["http", "browser"] = "http"
+    content: str | list[str]
+```
+
+The default `"http"` matters: results cached in Redis before this change don't have the field, and without a default they would fail to load.
+
+**18c.** In `main.py`, import `BrowserResponse` and `fetch_page_with_fallback` from `functions` (you can drop `fetch_page` from that import), and update `scrape()`:
+
+```python
+    response = fetch_page_with_fallback(normalized)
+    content = clean_html_response(response, mode)
+    result = ScrapeResponse(
+        url=normalized,
+        status_code=response.status_code,
+        ok=response.ok,
+        fetched_with="browser" if isinstance(response, BrowserResponse) else "http",
+        content=content,
+    )
+```
+
+Test it:
+
+- `https://example.com` should return `"fetched_with": "http"`.
+- `https://quotes.toscrape.com/js/` should return `"fetched_with": "browser"`, with the quotes in `content`.
+
+> Browser scrapes can take 20+ seconds in the worst case. Raise the `timeout=` in your client scripts to 60.
+
+---
+
+## Step 19: Add a "Use JavaScript" checkbox
+
+**Problem:** The automatic fallback only kicks in when the fast result *looks* wrong. Sometimes it looks fine but is incomplete: the page has plenty of text, yet the part you want (prices, comments, search results) is loaded by JavaScript. Let the user say "always use the browser for this one".
+
+**19a.** In `functions.py`, add a `use_js` parameter that skips the fast fetch:
+
+```python
+def fetch_page_with_fallback(
+    url: str,
+    use_js: bool = False,
+) -> requests.Response | BrowserResponse:
+    if use_js:
+        return fetch_with_browser(url)
+    try:
+        response = fetch_page(url)
+    ...  # rest unchanged
+```
+
+**19b.** In `cache.py`, make `use_js` part of the cache key. Otherwise a request *with* JavaScript could get back a cached result from *without* it:
+
+```python
+def cache_key(url: str, mode: str, use_js: bool) -> str:
+    js = "js" if use_js else "nojs"
+    return f"scrape:{mode}:{js}:{url}"
+```
+
+Add a `use_js` parameter to `get_cached` and `set_cached` too, and pass it on to `cache_key`:
+
+```python
+def get_cached(url: str, mode: str, use_js: bool) -> str | None:
+    ...
+        return redis_client.get(cache_key(url, mode, use_js))
+    ...
+
+
+def set_cached(url: str, mode: str, use_js: bool, value: str, ok: bool) -> None:
+    ...
+        redis_client.set(cache_key(url, mode, use_js), value, ex=ttl)
+    ...
+```
+
+**19c.** In `main.py`, pass it through `scrape()` and both endpoints:
+
+```python
+def scrape(url: str, mode: Literal["text", "html"], use_js: bool = False) -> ScrapeResponse:
+    ...
+    cached = get_cached(normalized, mode, use_js)
+    ...
+    response = fetch_page_with_fallback(normalized, use_js)
+    ...
+    set_cached(normalized, mode, use_js, result.model_dump_json(), result.ok)
+    return result
+
+
+@app.get("/scrape", response_model=ScrapeResponse,
+         dependencies=[Depends(require_api_key)])
+@limiter.limit("10/minute")
+def scrape_url(request: Request, url: str,
+               mode: Literal["text", "html"] = "text", js: bool = False):
+    try:
+        return scrape(url, mode, js)
+    except ScrapeError as e:
+        raise HTTPException(status_code=e.status_code, detail=str(e)) from e
+
+
+@app.post("/", response_class=HTMLResponse)
+@limiter.limit("10/minute")
+def index_submit(
+    request: Request,
+    url: str = Form(...),
+    mode: Literal["text", "html"] = Form("text"),
+    api_key: str = Form(""),
+    use_js: bool = Form(False),
+):
+    context = {"url": url, "mode": mode, "api_key": api_key, "use_js": use_js}
+    ...
+            context["result"] = scrape(url, mode, use_js)
+    ...
+```
+
+API users turn it on with `&js=true`. FastAPI turns `true`, `1`, `yes` and `on` into `True`.
+
+**19d.** Add the checkbox to `templates/index.html`, between the mode select and the API key field:
+
+```html
+    <label class="checkbox">
+      <input type="checkbox" name="use_js" value="true" {% if use_js %}checked{% endif %}>
+      Use JavaScript (slower, for pages that load their content with JavaScript)
+    </label>
+```
+
+How HTML checkboxes are sent:
+
+- **When ticked**, the form sends `use_js=true`.
+- **When unticked**, the form sends **nothing at all** for that field. That's why the endpoint has a default of `Form(False)`.
+- **`{% if use_js %}checked{% endif %}`** keeps the box ticked after the page reloads with the result.
+
+The existing `label` style stacks things vertically. Add this to the `<style>` block so the box sits next to its text:
+
+```css
+    .checkbox { display: flex; align-items: center; gap: .5rem; font-weight: normal; }
+```
+
+While you're in the template, show which fetcher was used next to the status:
+
+```html
+    <p class="meta">{{ result.url }} &middot; status {{ result.status_code }} &middot; via {{ result.fetched_with }}</p>
+```
+
+> **Think about it:** a browser scrape costs about 20× more than a normal one. Should `js=true` requests get a stricter rate limit (for example `3/minute`)? slowapi can't pick a limit based on a parameter directly. One option is a separate endpoint with its own `@limiter.limit`.
+
+---
+
+## Step 20: Deploy the browser to Fly.io
+
+The browser needs three things on Fly that your app doesn't have yet: Chromium installed in the image, more memory, and the new secrets.
+
+**20a.** Install Chromium in the `Dockerfile`. Change the second stage:
+
+```dockerfile
+FROM python:3.12.14-slim
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+WORKDIR /app
+COPY --from=builder /app/.venv .venv/
+# Downloads Chromium plus the Linux libraries it needs (fonts, graphics, ...)
+RUN .venv/bin/playwright install --with-deps chromium
+COPY . .
+CMD ["/app/.venv/bin/uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+```
+
+- **`PLAYWRIGHT_BROWSERS_PATH`** puts Chromium in a fixed folder, and Playwright looks there at runtime too.
+- **The install runs *before* `COPY . .`.** Docker caches each step. Code changes only affect `COPY . .`, so Chromium (hundreds of MB) isn't downloaded again on every deploy.
+- The image grows by about 400–600 MB, so the first deploy is slower, and so is a cold start.
+
+> If `--with-deps` fails because the Debian version isn't supported, use Playwright's ready-made image as the base of the second stage instead: `FROM mcr.microsoft.com/playwright/python:v<version>-noble`, with the same version as the `playwright` package in your requirements.
+
+**20b.** Give the machines more memory. In `fly.toml`:
+
+```toml
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 1024
+```
+
+With 256 MB, Chromium gets killed as soon as it starts. `fly logs` would show `Out of memory: Killed process`. 1 GB fits `MAX_BROWSERS = 2`. If you still see out-of-memory errors, lower it to 1. More memory costs more per hour (see Fly's pricing page), but with auto-stop you only pay while a machine is running.
+
+**20c.** Check that the secrets are there, then deploy:
+
+```powershell
+fly secrets list -a ihabov-universal-scraper   # API_KEYS, REDIS_URL, PROXY_URL
+git push                                        # or: fly deploy
+fly logs -a ihabov-universal-scraper
+```
+
+Then scrape `https://quotes.toscrape.com/js/`, once with the checkbox and once without. Both should return quotes: the first straight from the browser, the second through the automatic fallback.
+
+---
+
+## Step 21 (optional, advanced): Switch to async
 
 **Why:** A sync endpoint occupies one thread for the whole time it's waiting on the network. FastAPI's thread pool is limited (40 threads by default). With `async`, a single thread can wait on hundreds of requests at once.
 
@@ -988,25 +1596,33 @@ cache_lock = threading.Lock()  # sync endpoints run in multiple threads
 
 What changes:
 
-**16a.** Use `AsyncSession` and create it when the app starts (in `main.py`):
+**21a.** Use `AsyncSession` and create it when the app starts (in `main.py`). Keep the proxy from Step 16:
 
 ```python
 from contextlib import asynccontextmanager
 
 from curl_cffi.requests import AsyncSession
 
+from functions import proxies
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.http = AsyncSession(impersonate="chrome")
+    app.state.http = AsyncSession(impersonate="chrome", proxies=proxies)
     yield
     await app.state.http.close()
 
 
-app = FastAPI(title="Universal Scraper", lifespan=lifespan)
+app = FastAPI(
+    title="Ihabov Universal Scraper",
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+    lifespan=lifespan,
+)
 ```
 
-**16b.** Make the fetching functions `async` and pass the session in (in `functions.py`):
+**21b.** Make the fetching functions `async` and pass the session in (in `functions.py`):
 
 ```python
 import asyncio
@@ -1040,42 +1656,84 @@ async def fetch_page(session: AsyncSession, url: str) -> requests.Response:
 
 In the retry helper, replace `time.sleep(...)` with `await asyncio.sleep(...)`. **Never** call `time.sleep` inside async code, because it freezes the whole server.
 
-**16c.** Make the endpoint `async`:
+**21c.** Make the endpoints and `scrape()` `async`:
 
 ```python
-@app.get("/scrape", response_model=ScrapeResponse)
+@app.get("/scrape", response_model=ScrapeResponse,
+         dependencies=[Depends(require_api_key)])
 @limiter.limit("10/minute")
-async def scrape_url(request: Request, url: str, mode: Literal["text", "html"] = "text"):
+async def scrape_url(request: Request, url: str,
+                     mode: Literal["text", "html"] = "text", js: bool = False):
     ...
-    response = await fetch_page(request.app.state.http, normalized)
+    response = await fetch_page_with_fallback(request.app.state.http, normalized, js)
     # Parsing HTML is CPU work, so run it in a thread so it doesn't block other requests
     content = await asyncio.to_thread(clean_html_response, response, mode)
 ```
 
-**16d.** Swap the `threading.Lock` around the cache for an `asyncio.Lock()`, or drop the lock. In async code only one coroutine runs at a time, and plain dict get/set don't `await`, so they can't be interrupted.
+**21d.** Redis: switch to the async client. It has the same methods, but you `await` them:
+
+```python
+from redis import asyncio as aioredis
+
+redis_client = aioredis.Redis.from_url(REDIS_URL, decode_responses=True,
+                                       socket_timeout=1, socket_connect_timeout=1)
+
+async def get_cached(...):
+    ...
+    return await redis_client.get(cache_key(url, mode, use_js))
+```
+
+**21e.** Playwright: the sync API **refuses to run inside async code**, so switch to `playwright.async_api`. Async also unlocks a big speed-up: start **one** browser when the app starts (in `lifespan`) and keep it open. Each request then only opens a new *context* (like a fresh private window), which takes milliseconds instead of about a second:
+
+```python
+from playwright.async_api import async_playwright
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.http = AsyncSession(impersonate="chrome", proxies=proxies)
+    app.state.playwright = await async_playwright().start()
+    app.state.browser = await app.state.playwright.chromium.launch(proxy=playwright_proxy())
+    yield
+    await app.state.browser.close()
+    await app.state.playwright.stop()
+    await app.state.http.close()
+```
+
+In `fetch_with_browser`, use `context = await browser.new_context(service_workers="block")` and `await context.close()` in the `finally`, and put `await` in front of every page call. Replace the `threading.BoundedSemaphore` with an `asyncio.Semaphore(MAX_BROWSERS)` used as `async with browser_slots:`.
+
+> Downside: the browser now stays in memory the whole time the machine runs, even when nobody uses it. With 1 GB that's fine.
 
 ---
 
 # Part 6: Tests and docs
 
-## Step 17: Unit tests with pytest
+## Step 22: Unit tests with pytest
 
-**Why:** `normalize_url` and `clean_html_response` are *pure functions*: same input, same output, no network. They're the easiest code in the world to test, and tests let you refactor (like Step 16) without fear.
+**Why:** `normalize_url`, `clean_html_response` and `needs_browser` are *pure functions*: same input, same output, no network. They're the easiest code in the world to test, and tests let you refactor (like Step 21) without fear.
 
-**17a.** Add `pytest` and `httpx` (needed by FastAPI's `TestClient`) to `requirements.txt` and install them:
+**22a.** Add `pytest` and `httpx` (needed by FastAPI's `TestClient`) to `requirements.txt` and install them:
 
 ```bash
 pip install pytest httpx
 ```
 
-**17b.** Create a `tests/` folder with an empty `tests/__init__.py`. Also create an empty `conftest.py` in the **project root**, which makes pytest able to import `main` and `functions`.
+**22b.** Create a `tests/` folder with an empty `tests/__init__.py`. Also create `conftest.py` in the **project root**. Its presence lets pytest import `main` and `functions`, and pytest loads it *before* any test file. That makes it the place to set up the environment, because `auth.py`, `cache.py` and `functions.py` read their environment variables at import time:
 
-**17c.** Create `tests/test_functions.py`:
+```python
+import os
+
+os.environ["API_KEYS"] = "test-key"
+os.environ.pop("REDIS_URL", None)  # no cache in tests, every test starts clean
+os.environ.pop("PROXY_URL", None)  # tests must not use (and pay for) the proxy
+```
+
+**22c.** Create `tests/test_functions.py`:
 
 ```python
 import pytest
 
-from functions import clean_html_response, is_public_host, normalize_url
+from functions import clean_html_response, is_public_host, needs_browser, normalize_url
 
 
 @pytest.mark.parametrize(
@@ -1142,9 +1800,17 @@ def test_clean_html_text_mode_strips_scripts_and_styles():
 def test_clean_html_html_mode_returns_markup():
     result = clean_html_response(FakeResponse("<p>Hi</p>"), "html")
     assert "<p>" in result
+
+
+def test_needs_browser():
+    long_text = "<p>" + "word " * 50 + "</p>"
+    assert needs_browser(FakeResponse(long_text, status_code=403))    # bot check
+    assert needs_browser(FakeResponse('<div id="root"></div>'))         # JS shell
+    assert not needs_browser(FakeResponse(long_text))                   # normal page
+    assert not needs_browser(FakeResponse("<p>Not found</p>", 404))     # really missing
 ```
 
-**17d.** Create `tests/test_api.py`. It tests the endpoint **without** hitting the internet by replacing `fetch_page` with a fake:
+**22d.** Create `tests/test_api.py`. It tests the endpoint **without** hitting the internet (or starting a browser) by replacing `fetch_page_with_fallback` with a fake:
 
 ```python
 from fastapi.testclient import TestClient
@@ -1152,67 +1818,91 @@ from fastapi.testclient import TestClient
 import main
 from tests.test_functions import FakeResponse
 
+main.limiter.enabled = False  # tests send more than 10 requests per minute
 client = TestClient(main.app)
+HEADERS = {"X-API-Key": "test-key"}  # set in conftest.py
+
+
+def test_missing_api_key_returns_401():
+    response = client.get("/scrape", params={"url": "https://example.com"})
+    assert response.status_code == 401
 
 
 def test_invalid_scheme_returns_400():
-    response = client.get("/scrape", params={"url": "file:///etc/passwd"})
+    response = client.get("/scrape", params={"url": "file:///etc/passwd"}, headers=HEADERS)
     assert response.status_code == 400
 
 
 def test_private_ip_returns_403():
-    response = client.get("/scrape", params={"url": "http://127.0.0.1/"})
+    response = client.get("/scrape", params={"url": "http://127.0.0.1/"}, headers=HEADERS)
     assert response.status_code == 403
 
 
 def test_successful_scrape(monkeypatch):
-    # main.py did `from functions import fetch_page`, so we patch the name inside main
-    monkeypatch.setattr(main, "fetch_page", lambda url: FakeResponse("<p>Hello</p>"))
+    # main.py did `from functions import fetch_page_with_fallback`,
+    # so we patch the name inside main
+    monkeypatch.setattr(main, "fetch_page_with_fallback",
+                        lambda url, use_js=False: FakeResponse("<p>Hello</p>"))
 
-    response = client.get("/scrape", params={"url": "https://example.com"})
+    response = client.get("/scrape", params={"url": "https://example.com"}, headers=HEADERS)
 
     assert response.status_code == 200
     body = response.json()
     assert body["url"] == "https://example.com/"
     assert body["ok"] is True
+    assert body["fetched_with"] == "http"
     assert body["content"] == ["Hello"]
 
 
+def test_js_flag_is_passed_through(monkeypatch):
+    calls = []
+
+    def fake_fetch(url, use_js=False):
+        calls.append(use_js)
+        return FakeResponse("<p>Hello</p>")
+
+    monkeypatch.setattr(main, "fetch_page_with_fallback", fake_fetch)
+    client.get("/scrape", params={"url": "https://example.com", "js": "true"}, headers=HEADERS)
+    assert calls == [True]
+
+
 def test_invalid_mode_returns_422():
-    response = client.get("/scrape", params={"url": "https://example.com", "mode": "banana"})
+    response = client.get("/scrape", params={"url": "https://example.com", "mode": "banana"},
+                          headers=HEADERS)
     assert response.status_code == 422
 ```
 
-**17e.** Run the tests:
+**22e.** Run the tests:
 
 ```bash
 pytest -v
 ```
 
-> If you added the cache (Step 15), clear it between tests (`main.cache.clear()`), or earlier tests may affect later ones. If you added rate limiting (Step 14), more than 10 test requests per minute will get a 429. Add `main.limiter.enabled = False` at the top of `test_api.py`. If you did Step 16 (async), the fake `fetch_page` must be an `async def` and take the session as its first argument.
+> If you did Step 21 (async), the fake `fetch_page_with_fallback` must be an `async def` and take the session as its first argument.
 
 ---
 
-## Step 18: Write a README
+## Step 23: Write a README
 
 Create `README.md`. For a portfolio project it's the first thing people read. Include:
 
 1. **What it is:** one or two sentences.
-2. **Features:** SSRF protection, browser impersonation, text/HTML modes, rate limiting, and so on.
+2. **Features:** API keys, SSRF protection, browser impersonation, text/HTML modes, rate limiting, Redis cache, proxy support, and the Playwright fallback with the "Use JavaScript" option.
 3. **Installation:**
    ```bash
    python -m venv .venv
    .venv\Scripts\activate          # Windows
    pip install -r requirements.txt
+   playwright install chromium
    ```
-4. **Running:** `uvicorn main:app --reload`
+4. **Running:** the environment variables (`API_KEYS` required; `REDIS_URL` and `PROXY_URL` optional), then `uvicorn main:app --reload`.
 5. **Usage example:**
    ```bash
-   curl "http://127.0.0.1:8000/scrape?url=https://example.com&mode=text"
+   curl -H "X-API-Key: YOUR_KEY" "http://127.0.0.1:8000/scrape?url=https://example.com&mode=text&js=false"
    ```
    plus a sample JSON response.
-6. **API parameters:** `url` and `mode`, with their allowed values.
-7. **Error codes:** 400, 403, 413, 415, 422, 429, 502, and what each one means.
+6. **API parameters:** `url`, `mode` and `js`, with their allowed values.
+7. **Error codes:** 400, 401, 403, 413, 415, 422, 429, 502, and what each one means.
 8. **Running tests:** `pytest -v`
 
 ---
@@ -1234,8 +1924,13 @@ Tick these off as you go:
 - [ ] 11. `ok` field for 4xx/5xx, Pydantic response model
 - [ ] 12. One reusable HTTP session
 - [ ] 13. Retries with backoff for timeouts and 429/5xx
-- [ ] 14. Rate limiting with slowapi
-- [ ] 15. TTL cache
-- [ ] 16. (Optional) Async version
-- [ ] 17. Tests with pytest
-- [ ] 18. README
+- [ ] 14. Rate limiting with slowapi, using the real client IP behind Fly
+- [ ] 15. Redis cache (locally with Docker, on Fly with Upstash), shared rate limits
+- [ ] 16. Proxy from `PROXY_URL`
+- [ ] 17. Playwright browser fetcher with SSRF checks and a browser limit
+- [ ] 18. Automatic browser fallback, `fetched_with` in the response
+- [ ] 19. "Use JavaScript" checkbox and `js=true` API parameter
+- [ ] 20. Chromium in the Dockerfile, 1 GB memory on Fly
+- [ ] 21. (Optional) Async version
+- [ ] 22. Tests with pytest
+- [ ] 23. README
