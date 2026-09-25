@@ -1,5 +1,4 @@
 import re
-import uuid
 import logging
 from dataclasses import dataclass
 from typing import Callable
@@ -100,22 +99,28 @@ def parse_books(soup: BeautifulSoup, url: str) -> list[dict]:
         })
     return books
 
-def uzmi_podatke(content: BeautifulSoup, link: str) -> dict:
-    table = content.find("table", {"class" : "table-striped"})
-    columns = table.find_all("td")
-
-    knjiga = {}
-    knjiga["id"] = str(uuid.uuid4())
-    knjiga["title"] = content.find("h1").text
-    #podaci["price"] = content.find("p", {"class": "price_color"}).text
-    knjiga["UPC"] = (columns[0]).text
-    price_text = (columns[2]).text
-    price_text = price_text.lstrip("£")
-    knjiga["price"] = price_text
-    knjiga["tax"] = (columns[4]).text[1:]
-    knjiga["in_stock"] = (columns[5]).text
-    print("running...")
-    return knjiga
+def parse_book(soup: BeautifulSoup, url: str) -> dict:
+    product = soup.find("div", class_="product_main")
+    if product is None:
+        raise ParseError("Couldn't find the book on this page.")
+    info = {text_of(row.th): text_of(row.td) for row in soup.select("table.table-striped tr")}
+    breadcrumb = soup.select("ul.breadcrumb li a")
+    rating_classes = product.select_one("p.star-rating")["class"]
+    description = soup.select_one("#product_description + p")
+    image = soup.select_one("#product_gallery img")
+    return {
+        "title": text_of(product.h1),
+        "genre": text_of(breadcrumb[-1]) if len(breadcrumb) > 2 else None,
+        "price": to_price(info.get("Price (excl. tax)", "")),
+        "price_incl_tax": to_price(info.get("Price (incl. tax)", "")),
+        "tax": to_price(info.get("Tax", "")),
+        "stock": digits_only(info.get("Availability", "")),
+        "rating": next((BOOK_RATINGS[c] for c in rating_classes if c in BOOK_RATINGS), None),
+        "reviews": digits_only(info.get("Number of reviews", "")),
+        "upc": info.get("UPC"),
+        "description": text_of(description).removesuffix("...more").strip() if description else None,
+        "image": urljoin(url, image["src"]) if image else None,
+    }
 
 def parse_quotes(soup: BeautifulSoup, url: str) -> list[dict]:
     quotes = []
@@ -135,7 +140,7 @@ PARSERS = [
     Parser("books.toscrape.com", re.compile(r"/(index\.html)?|/catalogue/(page-\d+\.html|category/.+)"),
            "https://books.toscrape.com/catalogue/page-2.html", parse_books),
     Parser("books.toscrape.com", re.compile(r"/catalogue/(?!category/)[^/]+_\d+/index\.html"),
-           "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html", uzmi_podatke),
+           "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html", parse_book),
     Parser("quotes.toscrape.com", re.compile(r"/(page/\d+/?|tag/.+)?"),
            "https://quotes.toscrape.com/page/2/", parse_quotes),
 ]
