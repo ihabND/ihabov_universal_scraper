@@ -5,6 +5,9 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from auth import is_valid_key, require_api_key
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from functions import (
     ScrapeError,
     InvalidURLError,
@@ -33,6 +36,13 @@ app = FastAPI(
 )
 templates = Jinja2Templates(directory="templates")
 
+def client_ip(request: Request) -> str:
+    return request.headers.get("fly-client-ip") or get_remote_address(request)
+
+limiter = Limiter(key_func=client_ip)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 def scrape(url: str, mode: Literal["text", "html"]) -> ScrapeResponse:
     normalized = normalize_url(url)
     if normalized is None:
@@ -48,7 +58,9 @@ def scrape(url: str, mode: Literal["text", "html"]) -> ScrapeResponse:
 
 @app.get("/scrape", response_model=ScrapeResponse,
          dependencies=[Depends(require_api_key)])
-def scrape_url(url: str, mode: Literal["text", "html"] = "text"):
+@limiter.limit("10/minute")
+def scrape_url(request: Request, url: str, 
+               mode: Literal["text", "html"] = "text"):
     try:
         return scrape(url, mode)
     except ScrapeError as e:
@@ -59,6 +71,7 @@ def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {"mode": "text"})
 
 @app.post("/", response_class=HTMLResponse)
+@limiter.limit("10/minute")
 def index_submit(
     request: Request,
     url: str = Form(...),

@@ -4,6 +4,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urlsplit, urlunsplit, urljoin, quote
 import logging
 import ipaddress
+import time
 import socket
 from typing import Literal
 
@@ -12,9 +13,14 @@ PATH_SAFE_CHARS = "/%:@!$&'()*+,;=~"
 NON_CONTENT_TAGS = ["script", "style", "noscript", "template"]
 REQUEST_TIMEOUT = 10
 MAX_REDIRECTS = 5
+MAX_RETRIES = 3
+RETRY_STATUS_CODES = {429, 502, 503, 504}
+BACKOFF_SECONDS = 1
 REDIRECT_CODES = {301, 302, 303, 307, 308}
 MAX_CONTENT_BYTES = 5 * 1024 * 1024
 HTML_CONTENT_TYPES = ("text/html", "application/xhtml+xml")
+
+session = requests.Session(impersonate="chrome")
 
 logger = logging.getLogger(__name__)
 
@@ -96,16 +102,7 @@ def check_response(response: requests.Response) -> None:
 def fetch_page(url: str) -> requests.Response:
     for _ in range(MAX_REDIRECTS + 1):
         validate_url(url)
-        try:
-            response = requests.get(
-                url,
-                impersonate="chrome",
-                timeout=REQUEST_TIMEOUT,
-                allow_redirects=False,
-            )
-        except RequestException as e:
-            logger.warning("Fetch failed for %s: %s", url, e)
-            raise FetchError(f"Could not fetch the page: {e}") from e
+        response = get_with_retries()
         if response.status_code not in REDIRECT_CODES:
             check_response(response)
             return response
@@ -115,6 +112,21 @@ def fetch_page(url: str) -> requests.Response:
         url = urljoin(url, location)
         logger.info("Following redirect to %s", url)
     raise FetchError("Too many redirects")
+
+def get_with_retries(url: str) -> requests.Response:
+    for attempt in range(MAX_RETRIES + 1):
+        is_last_attempt = attempt == MAX_RETRIES
+        try:
+            response = session.get(url, timeout=REQUEST_TIMEOUT, allow_redirects=False)
+        except RequestException as e:
+            if is_last_attempt:
+                raise FetchError(f"Could not fetch the page: {e}") from e
+            logger.info("Attempt %d failed for %s: %s", attempt + 1, url, e)
+        else:
+            if response.status_code not in RETRY_STATUS_CODES or is_last_attempt:
+                return response
+            logger.info("Got %d from %s, retrying", response.status_code, url)
+        time.sleep(BACKOFF_SECONDS * 2 ** attempt)
 
 def clean_html_response(
     response: requests.Response,
