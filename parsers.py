@@ -1,4 +1,5 @@
 import re
+import uuid
 import logging
 from dataclasses import dataclass
 from typing import Callable
@@ -99,6 +100,23 @@ def parse_books(soup: BeautifulSoup, url: str) -> list[dict]:
         })
     return books
 
+def uzmi_podatke(content: BeautifulSoup, link: str) -> dict:
+    table = content.find("table", {"class" : "table-striped"})
+    columns = table.find_all("td")
+
+    knjiga = {}
+    knjiga["id"] = str(uuid.uuid4())
+    knjiga["title"] = content.find("h1").text
+    #podaci["price"] = content.find("p", {"class": "price_color"}).text
+    knjiga["UPC"] = (columns[0]).text
+    price_text = (columns[2]).text
+    price_text = price_text.lstrip("£")
+    knjiga["price"] = price_text
+    knjiga["tax"] = (columns[4]).text[1:]
+    knjiga["in_stock"] = (columns[5]).text
+    print("running...")
+    return knjiga
+
 def parse_quotes(soup: BeautifulSoup, url: str) -> list[dict]:
     quotes = []
     for quote in soup.select("div.quote"):
@@ -116,6 +134,8 @@ PARSERS = [
            "https://scrapeme.live/shop/Bulbasaur/", parse_pokemon),
     Parser("books.toscrape.com", re.compile(r"/(index\.html)?|/catalogue/(page-\d+\.html|category/.+)"),
            "https://books.toscrape.com/catalogue/page-2.html", parse_books),
+    Parser("books.toscrape.com", re.compile(r"/catalogue/(?!category/)[^/]+_\d+/index\.html"),
+           "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html", uzmi_podatke),
     Parser("quotes.toscrape.com", re.compile(r"/(page/\d+/?|tag/.+)?"),
            "https://quotes.toscrape.com/page/2/", parse_quotes),
 ]

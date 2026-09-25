@@ -55,7 +55,7 @@ def scrape(url: str, mode: Literal["text", "html"], parse: bool = False) -> Scra
     if parse:
         parser = find_parser(normalized)
         if parser is None:
-            supported = ", ".join(p.host for p in PARSERS)
+            supported = ", ".join(dict.fromkeys(p.host for p in PARSERS))
             raise UnsupportedSiteError(f"Parsing isn't supported for this page. Supported sites: {supported}.")
     response = fetch_page(normalized)
     result = ScrapeResponse(url=normalized, status_code=response.status_code, ok=response.ok)
