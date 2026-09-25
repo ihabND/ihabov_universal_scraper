@@ -36,6 +36,10 @@ class UnsupportedContentError(ScrapeError):
     status_code = 415
 class FetchError(ScrapeError):
     status_code = 502
+class UnsupportedSiteError(ScrapeError):
+    status_code = 400
+class ParseError(ScrapeError):
+    status_code = 502
 
 def normalize_url(url: str) -> str | None:
     url = url.strip()

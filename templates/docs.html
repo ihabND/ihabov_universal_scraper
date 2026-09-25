@@ -28,6 +28,7 @@
     <a href="#authentication">Authentication</a>
     <a href="#scrape">GET /scrape</a>
     <a href="#response">Response</a>
+    <a href="#parsing">Parsing</a>
     <a href="#errors">Errors</a>
     <a href="#rate-limits">Rate limits</a>
     <a href="#examples">Examples</a>
@@ -56,6 +57,10 @@
       <td><code>mode</code></td><td>string</td><td>No</td>
       <td><code>text</code> (default): the visible text as a list of lines, without scripts and styles.<br><code>html</code>: the full HTML, formatted, as one string.</td>
     </tr>
+    <tr>
+      <td><code>parse</code></td><td>boolean</td><td>No</td>
+      <td><code>false</code> (default). When <code>true</code>, returns the page's data as structured JSON in <code>parsed</code> instead of <code>content</code>, and <code>mode</code> is ignored. Only works on <a href="#parsing">supported sites</a>.</td>
+    </tr>
   </table>
 
   <h2 id="response">Response</h2>
@@ -65,7 +70,8 @@
     <tr><td><code>url</code></td><td>string</td><td>The normalized URL that was scraped.</td></tr>
     <tr><td><code>status_code</code></td><td>integer</td><td>The HTTP status the <em>target site</em> returned.</td></tr>
     <tr><td><code>ok</code></td><td>boolean</td><td><code>true</code> if the target site's status was below 400.</td></tr>
-    <tr><td><code>content</code></td><td>array of strings or string</td><td>A list of lines in <code>text</code> mode, one HTML string in <code>html</code> mode.</td></tr>
+    <tr><td><code>content</code></td><td>array of strings, string or null</td><td>A list of lines in <code>text</code> mode, one HTML string in <code>html</code> mode. <code>null</code> when <code>parse=true</code>.</td></tr>
+    <tr><td><code>parsed</code></td><td>object, array of objects or null</td><td>The parsed data when <code>parse=true</code>, otherwise <code>null</code>. See <a href="#parsing">Parsing</a>.</td></tr>
   </table>
   <p><code>ok</code> and <code>status_code</code> describe the page, not the API call. A page that returns <code>404</code> still comes back as a <code>200</code> from the API, with <code>"ok": false</code>, so you can see the error page's content.</p>
 
@@ -79,7 +85,52 @@
     "Example Domain",
     "This domain is for use in documentation examples without needing permission. Avoid use in operations.",
     "Learn more"
-  ]
+  ],
+  "parsed": null
+}</code></pre>
+
+  <h2 id="parsing">Parsing</h2>
+  <p>With <code>parse=true</code>, pages on these sites come back as structured JSON. Other sites return <code>400</code>, and the scraper checks this before fetching the page.</p>
+  <table>
+    <tr><th>Site</th><th>Pages</th><th><code>parsed</code> is</th></tr>
+    <tr>
+      <td><code>webscraper.io</code></td><td>A car page under <code>/test-sites/product/</code></td>
+      <td>One object: brand, model, year, engine, drivetrain, power_hp, country, mileage_km, condition, exterior_color, interior_color, body, price_eur, availability, rating, seller, transmission, tags, colors, image</td>
+    </tr>
+    <tr>
+      <td><code>scrapeme.live</code></td><td>A product page, like <code>/shop/Bulbasaur/</code></td>
+      <td>One object: name, price, description, sku, categories, tags, stock</td>
+    </tr>
+    <tr>
+      <td><code>books.toscrape.com</code></td><td>The home page, <code>/catalogue/page-N.html</code> or a category page</td>
+      <td>A list of books: title, price, stock, rating (1&ndash;5), url</td>
+    </tr>
+    <tr>
+      <td><code>quotes.toscrape.com</code></td><td>The home page, <code>/page/N/</code> or <code>/tag/&lt;tag&gt;/</code></td>
+      <td>A list of quotes: quote, author, tags</td>
+    </tr>
+  </table>
+  <p>Try it with an example page:</p>
+  <ul>
+    {% for parser in parsers %}<li><code>{{ parser.example }}</code></li>
+    {% endfor %}
+  </ul>
+
+  <h3>Example response (<code>parse=true</code>)</h3>
+  <pre><code>{
+  "url": "https://scrapeme.live/shop/Bulbasaur/",
+  "status_code": 200,
+  "ok": true,
+  "content": null,
+  "parsed": {
+    "name": "Bulbasaur",
+    "price": 63.0,
+    "description": "Bulbasaur can be seen napping in bright sunlight. ...",
+    "sku": "4391",
+    "categories": ["Pokemon", "Seed"],
+    "tags": ["bulbasaur", "Overgrow", "Seed"],
+    "stock": 45
+  }
 }</code></pre>
 
   <h2 id="errors">Errors</h2>
@@ -89,14 +140,14 @@
 }</code></pre>
   <table>
     <tr><th>Status</th><th>Meaning</th></tr>
-    <tr><td><code>400</code></td><td>The URL is invalid, or uses a scheme other than <code>http</code>/<code>https</code>.</td></tr>
+    <tr><td><code>400</code></td><td>The URL is invalid, or uses a scheme other than <code>http</code>/<code>https</code>, or <code>parse=true</code> was sent for a page that isn't <a href="#parsing">supported</a>.</td></tr>
     <tr><td><code>401</code></td><td>The API key is missing or wrong.</td></tr>
     <tr><td><code>403</code></td><td>The URL points to a private or internal address (like <code>localhost</code> or <code>192.168.x.x</code>), which is not allowed.</td></tr>
     <tr><td><code>413</code></td><td>The page is larger than 5 MB.</td></tr>
     <tr><td><code>415</code></td><td>The URL is not an HTML page (for example a PDF, image or JSON file).</td></tr>
     <tr><td><code>422</code></td><td>A parameter is missing or has an invalid value, like <code>mode=pdf</code>. The <code>detail</code> field is a list saying which parameter is wrong.</td></tr>
     <tr><td><code>429</code></td><td>Rate limit exceeded. The body is <code>{"error": "Rate limit exceeded: 10 per 1 minute"}</code>.</td></tr>
-    <tr><td><code>502</code></td><td>The page couldn't be fetched: the site is down, timed out, or redirected too many times.</td></tr>
+    <tr><td><code>502</code></td><td>The page couldn't be fetched: the site is down, timed out, or redirected too many times. With <code>parse=true</code>, also when the page didn't contain the expected data (for example a 404 page, or the site changed its layout).</td></tr>
   </table>
 
   <h2 id="rate-limits">Rate limits</h2>

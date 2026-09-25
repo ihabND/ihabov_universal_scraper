@@ -10,6 +10,7 @@
     .result h2 { margin-top: 0; }
     form { display: grid; gap: .75rem; }
     label { display: grid; gap: .25rem; font-weight: 600; }
+    label.check { display: flex; align-items: center; gap: .5rem; font-weight: normal; }
     input, select, button { font: inherit; padding: .5rem; }
     button { cursor: pointer; }
     .error { background: #fde8e8; color: #9b1c1c; padding: .75rem; border-radius: 4px; }
@@ -33,6 +34,10 @@
         <option value="html" {% if mode == "html" %}selected{% endif %}>HTML</option>
       </select>
     </label>
+    <label class="check">
+      <input type="checkbox" name="parse" value="true" {% if parse %}checked{% endif %}>
+      Parse into JSON (supported sites only, see <a href="/docs#parsing">docs</a>)
+    </label>
     <label>API key
       <input type="password" name="api_key" value="{{ api_key or '' }}" autocomplete="off" required>
     </label>
@@ -45,7 +50,9 @@
       <p class="error">{{ error }}</p>
     {% elif result %}
       <p class="meta">{{ result.url }} &middot; status {{ result.status_code }}</p>
-      {% if result.content is string %}
+      {% if parsed_json %}
+        <pre>{{ parsed_json }}</pre>
+      {% elif result.content is string %}
         <pre>{{ result.content }}</pre>
       {% else %}
         <pre>{{ result.content | join("\n") }}</pre>
