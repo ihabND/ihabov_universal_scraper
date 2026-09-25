@@ -1,0 +1,51 @@
+import logging
+import os
+
+import redis
+from redis.exceptions import RedisError
+
+logger = logging.getLogger(__name__)
+
+CACHE_TTL_SECONDS = 600        # successful pages: 5 minutes
+FAILED_CACHE_TTL_SECONDS = 30  # pages that returned 4xx/5xx: 30 seconds
+
+REDIS_URL = os.environ.get("REDIS_URL")
+
+# decode_responses=True gives back str instead of bytes.
+# Short timeouts: if Redis is slow or down, skip the cache instead of hanging the request.
+redis_client = (
+    redis.Redis.from_url(
+        REDIS_URL,
+        decode_responses=True,
+        socket_timeout=1,
+        socket_connect_timeout=1,
+    )
+    if REDIS_URL
+    else None
+)
+if redis_client is None:
+    logger.warning("REDIS_URL is not set, caching is disabled.")
+
+
+def cache_key(url: str, mode: str) -> str:
+    return f"scrape:{mode}:{url}"
+
+
+def get_cached(url: str, mode: str) -> str | None:
+    if redis_client is None:
+        return None
+    try:
+        return redis_client.get(cache_key(url, mode))
+    except RedisError as e:
+        logger.warning("Redis read failed: %s", e)
+        return None
+
+
+def set_cached(url: str, mode: str, value: str, ok: bool) -> None:
+    if redis_client is None:
+        return
+    ttl = CACHE_TTL_SECONDS if ok else FAILED_CACHE_TTL_SECONDS
+    try:
+        redis_client.set(cache_key(url, mode), value, ex=ttl)
+    except RedisError as e:
+        logger.warning("Redis write failed: %s", e)

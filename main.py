@@ -1,4 +1,5 @@
 import json
+import os
 import logging
 from typing import Literal
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
@@ -9,6 +10,7 @@ from auth import is_valid_key, require_api_key
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+from cache import get_cached, set_cached
 from functions import (
     ScrapeError,
     InvalidURLError,
@@ -43,7 +45,9 @@ templates = Jinja2Templates(directory="templates")
 def client_ip(request: Request) -> str:
     return request.headers.get("fly-client-ip") or get_remote_address(request)
 
-limiter = Limiter(key_func=client_ip)
+limiter = Limiter(key_func=client_ip,
+                  storage_uri=os.environ.get("REDIS_URL", "memory://"),
+                )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
@@ -51,6 +55,12 @@ def scrape(url: str, mode: Literal["text", "html"], parse: bool = False) -> Scra
     normalized = normalize_url(url)
     if normalized is None:
         raise InvalidURLError("Invalid URL, only HTTP and HTTPS.")
+
+    cached = get_cached(normalized, mode)
+    if cached is not None:
+        logger.info("Cache hit for %s", normalized)
+        return ScrapeResponse.model_validate_json(cached)        
+    
     parser = None
     if parse:
         parser = find_parser(normalized)
@@ -63,6 +73,7 @@ def scrape(url: str, mode: Literal["text", "html"], parse: bool = False) -> Scra
         result.parsed = parse_page(parser, response)
     else:
         result.content = clean_html_response(response, mode)
+    set_cached(normalized, mode, result.model_dump_json(), result.ok)
     return result
 
 @app.get("/scrape", response_model=ScrapeResponse,
