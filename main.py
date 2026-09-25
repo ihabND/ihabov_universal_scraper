@@ -70,6 +70,10 @@ def scrape_url(request: Request, url: str,
 def index(request: Request):
     return templates.TemplateResponse(request, "index.html", {"mode": "text"})
 
+@app.get("/docs", response_class=HTMLResponse)
+def docs(request: Request):
+    return templates.TemplateResponse(request, "docs.html")
+
 @app.post("/", response_class=HTMLResponse)
 @limiter.limit("10/minute")
 def index_submit(
