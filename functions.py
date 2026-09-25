@@ -102,7 +102,7 @@ def check_response(response: requests.Response) -> None:
 def fetch_page(url: str) -> requests.Response:
     for _ in range(MAX_REDIRECTS + 1):
         validate_url(url)
-        response = get_with_retries()
+        response = get_with_retries(url)
         if response.status_code not in REDIRECT_CODES:
             check_response(response)
             return response
