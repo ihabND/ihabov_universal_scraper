@@ -12,20 +12,27 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 from cache import get_cached, set_cached
 from functions import (
+    BROWSER_ENABLED,
     ScrapeError,
     InvalidURLError,
+    ParseError,
     UnsupportedSiteError,
     normalize_url,
-    fetch_page,
+    fetch,
+    fetch_with_browser,
     clean_html_response,
 )
 from parsers import PARSERS, find_parser, parse_page
+
+Mode = Literal["html", "json"]
+BrowserOption = Literal["auto", "never", "always"]
 
 class ScrapeResponse(BaseModel):
     url: str
     status_code: int
     ok: bool
-    content: str | list[str] | None = None
+    fetched_with: Literal["http", "browser"] = "http"
+    content: str | None = None
     parsed: dict | list[dict] | None = None
 
 logging.basicConfig(
@@ -54,45 +61,54 @@ limiter = Limiter(key_func=client_ip,
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-def scrape(url: str, mode: Literal["text", "html"], parse: bool = False) -> ScrapeResponse:
+def scrape(url: str, mode: Mode = "html", browser: BrowserOption = "auto") -> ScrapeResponse:
     normalized = normalize_url(url)
     if normalized is None:
         raise InvalidURLError("Invalid URL, only HTTP and HTTPS.")
 
-    cache_type = "parsed" if parse else mode
-    cached = get_cached(normalized, cache_type)
+    cached = get_cached(normalized, mode)
     if cached is not None:
         logger.info("Cache hit for %s", normalized)
-        return ScrapeResponse.model_validate_json(cached)        
-    
+        return ScrapeResponse.model_validate_json(cached)
+
     parser = None
-    if parse:
+    if mode == "json":
         parser = find_parser(normalized)
         if parser is None:
             supported = ", ".join(dict.fromkeys(p.host for p in PARSERS))
-            raise UnsupportedSiteError(f"Parsing isn't supported for this page. Supported sites: {supported}.")
-    response = fetch_page(normalized)
-    result = ScrapeResponse(url=normalized, status_code=response.status_code, ok=response.ok)
+            raise UnsupportedSiteError(f"JSON isn't available for this page. Supported sites: {supported}.")
+    page = fetch(normalized, browser)
     if parser:
-        result.parsed = parse_page(parser, response)
+        try:
+            parsed = parse_page(parser, page)
+        except ParseError:
+            if page.fetched_with == "browser" or browser == "never" or not BROWSER_ENABLED:
+                raise
+            logger.info("Parsing %s failed, retrying with the browser", page.url)
+            page = fetch_with_browser(page.url)
+            parsed = parse_page(parser, page)
+    result = ScrapeResponse(url=normalized, status_code=page.status_code, ok=page.ok,
+                            fetched_with=page.fetched_with)
+    if parser:
+        result.parsed = parsed
     else:
-        result.content = clean_html_response(response, mode)
-    set_cached(normalized, cache_type, result.model_dump_json(), result.ok)
+        result.content = clean_html_response(page)
+    set_cached(normalized, mode, result.model_dump_json(), result.ok)
     return result
 
 @app.get("/scrape", response_model=ScrapeResponse,
          dependencies=[Depends(require_api_key)])
 @limiter.limit("10/minute")
 def scrape_url(request: Request, url: str,
-               mode: Literal["text", "html"] = "text", parse: bool = False):
+               mode: Mode = "html", browser: BrowserOption = "auto"):
     try:
-        return scrape(url, mode, parse)
+        return scrape(url, mode, browser)
     except ScrapeError as e:
         raise HTTPException(status_code=e.status_code, detail=str(e)) from e
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", {"mode": "text"})
+    return templates.TemplateResponse(request, "index.html", {"mode": "html", "browser": "auto"})
 
 @app.get("/docs", response_class=HTMLResponse)
 def docs(request: Request):
@@ -103,18 +119,18 @@ def docs(request: Request):
 def index_submit(
     request: Request,
     url: str = Form(...),
-    mode: Literal["text", "html"] = Form("text"),
-    parse: bool = Form(False),
+    mode: Mode = Form("html"),
+    browser: BrowserOption = Form("auto"),
     api_key: str = Form(""),
 ):
-    context = {"url": url, "mode": mode, "parse": parse, "api_key": api_key}
+    context = {"url": url, "mode": mode, "browser": browser, "api_key": api_key}
     status_code = 200
     if not is_valid_key(api_key):
         context["error"] = "Invalid or missing API key."
         status_code = 401
     else:
         try:
-            result = scrape(url, mode, parse)
+            result = scrape(url, mode, browser)
             context["result"] = result
             if result.parsed is not None:
                 context["parsed_json"] = json.dumps(result.parsed, indent=2, ensure_ascii=False)

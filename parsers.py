@@ -1,11 +1,12 @@
 import re
+import json
+import html
 import logging
 from dataclasses import dataclass
 from typing import Callable
 from urllib.parse import urljoin, urlsplit
 from bs4 import BeautifulSoup
-from curl_cffi import requests
-from functions import ParseError
+from functions import Page, ParseError
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,26 @@ def to_price(text: str) -> float | None:
 
 def text_of(tag) -> str | None:
     return tag.get_text(strip=True) if tag else None
+
+def find_json_ld(soup: BeautifulSoup, type_name: str) -> dict | None:
+    for tag in soup.find_all("script", {"type": "application/ld+json"}):
+        try:
+            data = json.loads(tag.string or "")
+        except ValueError:
+            continue
+        items = data if isinstance(data, list) else data.get("@graph", [data])
+        for item in items:
+            types = item.get("@type")
+            if type_name == types or (isinstance(types, list) and type_name in types):
+                return item
+    return None
+
+def to_minutes(duration: str | None) -> int | None:
+    match = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?", duration or "")
+    if not match:
+        return None
+    hours, minutes = (int(g) if g else 0 for g in match.groups())
+    return hours * 60 + minutes
 
 CAR_FIELDS = {
     "Make": "brand",
@@ -132,6 +153,117 @@ def parse_quotes(soup: BeautifulSoup, url: str) -> list[dict]:
         })
     return quotes
 
+def parse_vulkan_product(soup: BeautifulSoup, url: str) -> dict:
+    product = find_json_ld(soup, "Product")
+    if product is None:
+        raise ParseError("Couldn't find the product on this page.")
+    offer = product.get("offers") or {}
+    return {
+        "name": product.get("name"),
+        "publisher": (product.get("brand") or {}).get("name"),
+        "price": to_price(str(offer.get("price", ""))),
+        "currency": offer.get("priceCurrency"),
+        "isbn": product.get("isbn"),
+        "sku": product.get("sku"),
+        "product_id": product.get("productID"),
+        "description": html.unescape(product.get("description") or "").strip() or None,
+        "image": product.get("image"),
+        "url": offer.get("url") or url,
+    }
+
+def parse_ipon_product(soup: BeautifulSoup, url: str) -> dict:
+    product = find_json_ld(soup, "Product")
+    if product is None:
+        raise ParseError("Couldn't find the product on this page.")
+    offer = product.get("offers") or {}
+    shipping = (offer.get("shippingDetails") or {}).get("shippingRate") or {}
+    images = product.get("image") or []
+    return {
+        "name": product.get("name"),
+        "brand": (product.get("brand") or {}).get("name"),
+        "price": offer.get("price") or None,
+        "currency": offer.get("priceCurrency"),
+        "availability": (offer.get("availability") or "").rsplit("/", 1)[-1] or None,
+        "shipping_price": shipping.get("value"),
+        "category": product.get("category"),
+        "sku": product.get("sku"),
+        "mpn": product.get("mpn"),
+        "ean": product.get("gtin13"),
+        "description": (product.get("description") or "").strip() or None,
+        "image": images[0] if isinstance(images, list) and images else images or None,
+        "url": offer.get("url") or url,
+    }
+
+def parse_recipe(soup: BeautifulSoup, url: str) -> dict:
+    recipe = find_json_ld(soup, "Recipe")
+    if recipe is None:
+        raise ParseError("Couldn't find the recipe on this page.")
+    rating = recipe.get("aggregateRating") or {}
+    recipe_yield = recipe.get("recipeYield")
+    if isinstance(recipe_yield, list):
+        recipe_yield = recipe_yield[-1] if recipe_yield else None
+    image = recipe.get("image")
+    if isinstance(image, list):
+        image = image[0] if image else None
+    if isinstance(image, dict):
+        image = image.get("url")
+    return {
+        "name": html.unescape(recipe.get("name") or ""),
+        "description": html.unescape(recipe.get("description") or ""),
+        "author": [a.get("name") for a in recipe.get("author") or [] if a.get("name")],
+        "rating": to_price(str(rating.get("ratingValue", ""))),
+        "rating_count": digits_only(str(rating.get("ratingCount", ""))),
+        "prep_minutes": to_minutes(recipe.get("prepTime")),
+        "cook_minutes": to_minutes(recipe.get("cookTime")),
+        "total_minutes": to_minutes(recipe.get("totalTime")),
+        "yield": recipe_yield,
+        "categories": recipe.get("recipeCategory") or [],
+        "cuisine": recipe.get("recipeCuisine") or [],
+        "ingredients": [html.unescape(i) for i in recipe.get("recipeIngredient") or []],
+        "instructions": [html.unescape(s.get("text", "")).strip() for s in recipe.get("recipeInstructions") or []],
+        "nutrition": {k: v for k, v in (recipe.get("nutrition") or {}).items() if not k.startswith("@")},
+        "image": image,
+        "date_published": (recipe.get("datePublished") or "")[:10] or None,
+    }
+
+IMDB_TYPES = ("Movie", "TVSeries", "TVMiniSeries", "TVEpisode", "VideoGame")
+
+def as_list(value) -> list:
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+def names_of(value) -> list[str]:
+    return [html.unescape(item["name"]) for item in as_list(value) if item.get("name")]
+
+def parse_movie(soup: BeautifulSoup, url: str) -> dict:
+    movie = next((m for t in IMDB_TYPES if (m := find_json_ld(soup, t))), None)
+    if movie is None:
+        raise ParseError("Couldn't find the title on this page.")
+    date_published = movie.get("datePublished") or ""
+    rating = movie.get("aggregateRating") or {}
+    keywords = html.unescape(movie.get("keywords") or "")
+    return {
+        "title": html.unescape(movie.get("name") or ""),
+        "alternate_title": html.unescape(movie.get("alternateName") or "") or None,
+        "type": movie.get("@type"),
+        "year": int(date_published[:4]) if date_published[:4].isdigit() else None,
+        "date_published": date_published or None,
+        "content_rating": movie.get("contentRating"),
+        "genres": as_list(movie.get("genre")),
+        "rating": rating.get("ratingValue"),
+        "rating_count": rating.get("ratingCount"),
+        "runtime_minutes": to_minutes(movie.get("duration")),
+        "directors": names_of(movie.get("director")),
+        "writers": names_of(movie.get("creator")),
+        "actors": names_of(movie.get("actor")),
+        "keywords": [k.strip() for k in keywords.split(",") if k.strip()],
+        "description": html.unescape(movie.get("description") or "") or None,
+        "poster": movie.get("image"),
+        "trailer": (movie.get("trailer") or {}).get("url"),
+        "url": movie.get("url") or url,
+    }
+
 PARSERS = [
     Parser("webscraper.io", re.compile(r"/test-sites/product/[^/]+/?"),
            "https://webscraper.io/test-sites/product/bmw-e24-635csi-1954-c002", parse_car),
@@ -143,6 +275,14 @@ PARSERS = [
            "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html", parse_book),
     Parser("quotes.toscrape.com", re.compile(r"/(page/\d+/?|tag/.+)?"),
            "https://quotes.toscrape.com/page/2/", parse_quotes),
+    Parser("knjizare-vulkan.rs", re.compile(r"/[^/]+/\d+-[^/]+/?"),
+           "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava", parse_vulkan_product),
+    Parser("iponcomp.com", re.compile(r"/shop/product/[^/]+/\d+/?"),
+           "https://iponcomp.com/shop/product/valueline-usb-32-gen-1-hub-4-ports-type-c-connection-cable/1871163", parse_ipon_product),
+    Parser("allrecipes.com", re.compile(r"/recipe/\d+/[^/]+/?|/[^/]+-recipe-\d+/?"),
+           "https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies/", parse_recipe),
+    Parser("imdb.com", re.compile(r"/title/tt\d+/?"),
+           "https://www.imdb.com/title/tt0111161/", parse_movie),
 ]
 
 def find_parser(url: str) -> Parser | None:
@@ -153,7 +293,7 @@ def find_parser(url: str) -> Parser | None:
             return parser
     return None
 
-def parse_page(parser: Parser, response: requests.Response) -> Parsed:
+def parse_page(parser: Parser, response: Page) -> Parsed:
     soup = BeautifulSoup(response.content, "lxml")
     try:
         result = parser.parse(soup, response.url)

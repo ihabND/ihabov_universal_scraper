@@ -71,7 +71,7 @@ import requests
 
 resp = requests.get(
     "https://ihabov-universal-scraper.fly.dev/scrape",
-    params={"url": "https://example.com", "mode": "text"},  # mode: "text" or "html"
+    params={"url": "https://example.com", "mode": "html"},  # mode: "html" or "json"
     headers={"X-API-Key": os.environ["SCRAPER_API_KEY"]},
     timeout=30,
 )
@@ -88,7 +88,7 @@ HTTP 401
 
 ## Using the website
 
-Open https://ihabov-universal-scraper.fly.dev/, enter the URL, choose text or HTML, paste your key, and press **Scrape**.
+Open https://ihabov-universal-scraper.fly.dev/, enter the URL, choose HTML or JSON, paste your key, and press **Scrape**.
 
 ## Running locally
 

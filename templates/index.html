@@ -10,7 +10,6 @@
     .result h2 { margin-top: 0; }
     form { display: grid; gap: .75rem; }
     label { display: grid; gap: .25rem; font-weight: 600; }
-    label.check { display: flex; align-items: center; gap: .5rem; font-weight: normal; }
     input, select, button { font: inherit; padding: .5rem; }
     button { cursor: pointer; }
     .error { background: #fde8e8; color: #9b1c1c; padding: .75rem; border-radius: 4px; }
@@ -30,13 +29,17 @@
     </label>
     <label>Mode
       <select name="mode">
-        <option value="text" {% if mode == "text" %}selected{% endif %}>Text</option>
         <option value="html" {% if mode == "html" %}selected{% endif %}>HTML</option>
+        <option value="json" {% if mode == "json" %}selected{% endif %}>JSON (supported sites only)</option>
       </select>
     </label>
-    <label class="check">
-      <input type="checkbox" name="parse" value="true" {% if parse %}checked{% endif %}>
-      Parse into JSON (supported sites only, see <a href="/docs#parsing">docs</a>)
+    <p class="meta">JSON works on <a href="/docs#json">these sites</a>.</p>
+    <label>Browser
+      <select name="browser">
+        <option value="auto" {% if browser == "auto" %}selected{% endif %}>Auto: use it only if the page is blocked</option>
+        <option value="never" {% if browser == "never" %}selected{% endif %}>Never</option>
+        <option value="always" {% if browser == "always" %}selected{% endif %}>Always (slower)</option>
+      </select>
     </label>
     <label>API key
       <input type="password" name="api_key" value="{{ api_key or '' }}" autocomplete="off" required>
@@ -49,13 +52,11 @@
     {% if error %}
       <p class="error">{{ error }}</p>
     {% elif result %}
-      <p class="meta">{{ result.url }} &middot; status {{ result.status_code }}</p>
+      <p class="meta">{{ result.url }} &middot; status {{ result.status_code }} &middot; fetched with {{ result.fetched_with }}</p>
       {% if parsed_json %}
         <pre>{{ parsed_json }}</pre>
-      {% elif result.content is string %}
-        <pre>{{ result.content }}</pre>
       {% else %}
-        <pre>{{ result.content | join("\n") }}</pre>
+        <pre>{{ result.content }}</pre>
       {% endif %}
     {% else %}
       <p class="meta">The scraped content will appear here.</p>

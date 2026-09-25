@@ -22,13 +22,13 @@
 <body>
   <p class="meta"><a href="/">&larr; Back to the scraper</a></p>
   <h1>API Docs</h1>
-  <p>Fetch any public web page and get back its text or cleaned-up HTML as JSON. The scraper uses a real browser's network fingerprint, follows redirects safely, and blocks requests to internal addresses.</p>
+  <p>Fetch any public web page and get back its formatted HTML, or, on supported sites, the page's data as structured JSON. The scraper uses a real browser's network fingerprint, follows redirects safely, and blocks requests to internal addresses.</p>
 
   <nav class="meta">
     <a href="#authentication">Authentication</a>
     <a href="#scrape">GET /scrape</a>
     <a href="#response">Response</a>
-    <a href="#parsing">Parsing</a>
+    <a href="#json">JSON mode</a>
     <a href="#errors">Errors</a>
     <a href="#rate-limits">Rate limits</a>
     <a href="#examples">Examples</a>
@@ -55,11 +55,11 @@
     </tr>
     <tr>
       <td><code>mode</code></td><td>string</td><td>No</td>
-      <td><code>text</code> (default): the visible text as a list of lines, without scripts and styles.<br><code>html</code>: the full HTML, formatted, as one string.</td>
+      <td><code>html</code> (default): the full HTML, formatted, as one string in <code>content</code>.<br><code>json</code>: the page's data as structured JSON in <code>parsed</code>. Only works on <a href="#json">supported sites</a>.</td>
     </tr>
     <tr>
-      <td><code>parse</code></td><td>boolean</td><td>No</td>
-      <td><code>false</code> (default). When <code>true</code>, returns the page's data as structured JSON in <code>parsed</code> instead of <code>content</code>, and <code>mode</code> is ignored. Only works on <a href="#parsing">supported sites</a>.</td>
+      <td><code>browser</code></td><td>string</td><td>No</td>
+      <td><code>auto</code> (default): fetch the page normally, and only if the site blocks it (a bot check, or status <code>202</code>, <code>403</code>, <code>429</code> or <code>503</code>), try again with a real headless browser. With <code>mode=json</code>, also when the page doesn't contain the expected data.<br><code>never</code>: don't use the browser.<br><code>always</code>: go straight to the browser, for sites you know need it. Slower: a few seconds per page.</td>
     </tr>
   </table>
 
@@ -70,27 +70,24 @@
     <tr><td><code>url</code></td><td>string</td><td>The normalized URL that was scraped.</td></tr>
     <tr><td><code>status_code</code></td><td>integer</td><td>The HTTP status the <em>target site</em> returned.</td></tr>
     <tr><td><code>ok</code></td><td>boolean</td><td><code>true</code> if the target site's status was below 400.</td></tr>
-    <tr><td><code>content</code></td><td>array of strings, string or null</td><td>A list of lines in <code>text</code> mode, one HTML string in <code>html</code> mode. <code>null</code> when <code>parse=true</code>.</td></tr>
-    <tr><td><code>parsed</code></td><td>object, array of objects or null</td><td>The parsed data when <code>parse=true</code>, otherwise <code>null</code>. See <a href="#parsing">Parsing</a>.</td></tr>
+    <tr><td><code>fetched_with</code></td><td>string</td><td><code>http</code> for a normal fetch, <code>browser</code> when the headless browser was used.</td></tr>
+    <tr><td><code>content</code></td><td>string or null</td><td>The formatted HTML with <code>mode=html</code>, otherwise <code>null</code>.</td></tr>
+    <tr><td><code>parsed</code></td><td>object, array of objects or null</td><td>The page's data with <code>mode=json</code>, otherwise <code>null</code>. See <a href="#json">JSON mode</a>.</td></tr>
   </table>
   <p><code>ok</code> and <code>status_code</code> describe the page, not the API call. A page that returns <code>404</code> still comes back as a <code>200</code> from the API, with <code>"ok": false</code>, so you can see the error page's content.</p>
 
-  <h3>Example response (<code>mode=text</code>)</h3>
+  <h3>Example response (<code>mode=html</code>)</h3>
   <pre><code>{
   "url": "https://example.com/",
   "status_code": 200,
   "ok": true,
-  "content": [
-    "Example Domain",
-    "Example Domain",
-    "This domain is for use in documentation examples without needing permission. Avoid use in operations.",
-    "Learn more"
-  ],
+  "fetched_with": "http",
+  "content": "&lt;!DOCTYPE html&gt;\n&lt;html lang=\"en\"&gt;\n &lt;head&gt;\n  &lt;title&gt;\n   Example Domain\n  &lt;/title&gt;\n ...",
   "parsed": null
 }</code></pre>
 
-  <h2 id="parsing">Parsing</h2>
-  <p>With <code>parse=true</code>, pages on these sites come back as structured JSON. Other sites return <code>400</code>, and the scraper checks this before fetching the page.</p>
+  <h2 id="json">JSON mode</h2>
+  <p>With <code>mode=json</code>, pages on these sites come back as structured JSON. Other sites return <code>400</code>, and the scraper checks this before fetching the page.</p>
   <table>
     <tr><th>Site</th><th>Pages</th><th><code>parsed</code> is</th></tr>
     <tr>
@@ -113,6 +110,22 @@
       <td><code>quotes.toscrape.com</code></td><td>The home page, <code>/page/N/</code> or <code>/tag/&lt;tag&gt;/</code></td>
       <td>A list of quotes: quote, author, tags</td>
     </tr>
+    <tr>
+      <td><code>knjizare-vulkan.rs</code></td><td>A product page, like <code>/domaci-klasici/25486-tvrdava</code></td>
+      <td>One object: name, publisher, price, currency, isbn, sku, product_id, description, image, url</td>
+    </tr>
+    <tr>
+      <td><code>iponcomp.com</code></td><td>A product page, like <code>/shop/product/&lt;name&gt;/1871163</code></td>
+      <td>One object: name, brand, price (null when the shop lists no price), currency, availability, shipping_price, category, sku, mpn, ean, description, image, url</td>
+    </tr>
+    <tr>
+      <td><code>allrecipes.com</code></td><td>A recipe page, like <code>/recipe/10813/best-chocolate-chip-cookies/</code> or <code>/apple-cider-bath-cinnamon-rolls-recipe-12111965</code></td>
+      <td>One object: name, description, author, rating, rating_count, prep/cook/total_minutes, yield, categories, cuisine, ingredients, instructions, nutrition, image, date_published</td>
+    </tr>
+    <tr>
+      <td><code>imdb.com</code></td><td>A title page, like <code>/title/tt0111161/</code> (movies, series and episodes). Needs the browser, which <code>browser=auto</code> uses automatically.</td>
+      <td>One object: title, alternate_title, type, year, date_published, content_rating, genres, rating, rating_count, runtime_minutes, directors, writers, actors, keywords, description, poster, trailer, url</td>
+    </tr>
   </table>
   <p>Try it with an example page:</p>
   <ul>
@@ -120,11 +133,12 @@
     {% endfor %}
   </ul>
 
-  <h3>Example response (<code>parse=true</code>)</h3>
+  <h3>Example response (<code>mode=json</code>)</h3>
   <pre><code>{
   "url": "https://scrapeme.live/shop/Bulbasaur/",
   "status_code": 200,
   "ok": true,
+  "fetched_with": "http",
   "content": null,
   "parsed": {
     "name": "Bulbasaur",
@@ -144,14 +158,14 @@
 }</code></pre>
   <table>
     <tr><th>Status</th><th>Meaning</th></tr>
-    <tr><td><code>400</code></td><td>The URL is invalid, or uses a scheme other than <code>http</code>/<code>https</code>, or <code>parse=true</code> was sent for a page that isn't <a href="#parsing">supported</a>.</td></tr>
+    <tr><td><code>400</code></td><td>The URL is invalid, or uses a scheme other than <code>http</code>/<code>https</code>, or <code>mode=json</code> was sent for a page that isn't <a href="#json">supported</a>, or <code>browser=always</code> was sent to a server where the browser is turned off.</td></tr>
     <tr><td><code>401</code></td><td>The API key is missing or wrong.</td></tr>
     <tr><td><code>403</code></td><td>The URL points to a private or internal address (like <code>localhost</code> or <code>192.168.x.x</code>), which is not allowed.</td></tr>
     <tr><td><code>413</code></td><td>The page is larger than 5 MB.</td></tr>
     <tr><td><code>415</code></td><td>The URL is not an HTML page (for example a PDF, image or JSON file).</td></tr>
     <tr><td><code>422</code></td><td>A parameter is missing or has an invalid value, like <code>mode=pdf</code>. The <code>detail</code> field is a list saying which parameter is wrong.</td></tr>
     <tr><td><code>429</code></td><td>Rate limit exceeded. The body is <code>{"error": "Rate limit exceeded: 10 per 1 minute"}</code>.</td></tr>
-    <tr><td><code>502</code></td><td>The page couldn't be fetched: the site is down, timed out, or redirected too many times. With <code>parse=true</code>, also when the page didn't contain the expected data (for example a 404 page, or the site changed its layout).</td></tr>
+    <tr><td><code>502</code></td><td>The page couldn't be fetched: the site is down, timed out, or redirected too many times. With <code>mode=json</code>, also when the page didn't contain the expected data (for example a 404 page, or the site changed its layout).</td></tr>
   </table>
 
   <h2 id="rate-limits">Rate limits</h2>
@@ -161,14 +175,14 @@
 
   <h3>curl</h3>
   <pre><code>curl -H "X-API-Key: YOUR_API_KEY" \
-  "https://ihabov-universal-scraper.fly.dev/scrape?url=https://example.com&amp;mode=text"</code></pre>
+  "https://ihabov-universal-scraper.fly.dev/scrape?url=https://scrapeme.live/shop/Bulbasaur/&amp;mode=json"</code></pre>
 
   <h3>Python</h3>
   <pre><code>import requests
 
 response = requests.get(
     "https://ihabov-universal-scraper.fly.dev/scrape",
-    params={"url": "https://example.com", "mode": "text", "parse": False},
+    params={"url": "https://scrapeme.live/shop/Bulbasaur/", "mode": "json"},
     headers={"X-API-Key": "YOUR_API_KEY"},
     timeout=60,
 )
@@ -177,7 +191,7 @@ response.raise_for_status()
 print(response.json())</code></pre>
 
   <h3>JavaScript</h3>
-  <pre><code>const params = new URLSearchParams({ url: "https://example.com", mode: "text" });
+  <pre><code>const params = new URLSearchParams({ url: "https://example.com", mode: "html" });
 
 const response = await fetch(
   `https://ihabov-universal-scraper.fly.dev/scrape?${params}`,
@@ -196,6 +210,7 @@ console.log(data.content);</code></pre>
     <tr><td>Retries</td><td>Up to 3, with increasing waits, on timeouts and on <code>429</code>, <code>502</code>, <code>503</code>, <code>504</code> from the target site</td></tr>
     <tr><td>Redirects</td><td>Followed automatically, up to 5. Every hop is checked against the internal-address block.</td></tr>
     <tr><td>Content types</td><td>HTML only (<code>text/html</code>, <code>application/xhtml+xml</code>)</td></tr>
+    <tr><td>Browser</td><td>Up to 2 at a time, 30 seconds to load the page plus up to 20 seconds for a bot check to finish. Images, fonts and video are not loaded, and every request the browser makes is checked against the internal-address block.</td></tr>
   </table>
   <p><strong>First request after a quiet period:</strong> the server sleeps when idle, and waking it adds 2 to 5 seconds. Use a client timeout of at least 60 seconds to also cover retries on slow sites.</p>
 </body>
