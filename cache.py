@@ -6,7 +6,7 @@ from redis.exceptions import RedisError
 
 logger = logging.getLogger(__name__)
 
-CACHE_TTL_SECONDS = 600        # successful pages: 5 minutes
+CACHE_TTL_SECONDS = 600        # successful pages: 10 minutes
 FAILED_CACHE_TTL_SECONDS = 30  # pages that returned 4xx/5xx: 30 seconds
 
 REDIS_URL = os.environ.get("REDIS_URL")

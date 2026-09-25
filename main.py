@@ -47,6 +47,9 @@ def client_ip(request: Request) -> str:
 
 limiter = Limiter(key_func=client_ip,
                   storage_uri=os.environ.get("REDIS_URL", "memory://"),
+                  storage_options={"socket_timeout": 1, "socket_connect_timeout": 1},
+                  swallow_errors=True,
+                  in_memory_fallback_enabled=True,
                 )
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
@@ -56,7 +59,8 @@ def scrape(url: str, mode: Literal["text", "html"], parse: bool = False) -> Scra
     if normalized is None:
         raise InvalidURLError("Invalid URL, only HTTP and HTTPS.")
 
-    cached = get_cached(normalized, mode)
+    cache_type = "parsed" if parse else mode
+    cached = get_cached(normalized, cache_type)
     if cached is not None:
         logger.info("Cache hit for %s", normalized)
         return ScrapeResponse.model_validate_json(cached)        
@@ -73,7 +77,7 @@ def scrape(url: str, mode: Literal["text", "html"], parse: bool = False) -> Scra
         result.parsed = parse_page(parser, response)
     else:
         result.content = clean_html_response(response, mode)
-    set_cached(normalized, mode, result.model_dump_json(), result.ok)
+    set_cached(normalized, cache_type, result.model_dump_json(), result.ok)
     return result
 
 @app.get("/scrape", response_model=ScrapeResponse,
