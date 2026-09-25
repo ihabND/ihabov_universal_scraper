@@ -168,14 +168,13 @@
 
 response = requests.get(
     "https://ihabov-universal-scraper.fly.dev/scrape",
-    params={"url": "https://example.com", "mode": "text"},
+    params={"url": "https://example.com", "mode": "text", "parse": False},
     headers={"X-API-Key": "YOUR_API_KEY"},
     timeout=60,
 )
 response.raise_for_status()
 
-for line in response.json()["content"]:
-    print(line)</code></pre>
+print(response.json())</code></pre>
 
   <h3>JavaScript</h3>
   <pre><code>const params = new URLSearchParams({ url: "https://example.com", mode: "text" });
