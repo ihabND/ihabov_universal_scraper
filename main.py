@@ -2,11 +2,11 @@ import json
 import os
 import logging
 from typing import Literal
-from fastapi import Depends, FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Request, Security
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
-from auth import is_valid_key, require_api_key
+from auth import api_key_header, is_valid_key
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -66,7 +66,7 @@ def scrape(url: str, mode: Mode = "html", browser: BrowserOption = "auto") -> Sc
     if normalized is None:
         raise InvalidURLError("Invalid URL, only HTTP and HTTPS.")
 
-    cached = get_cached(normalized, mode)
+    cached = get_cached(normalized, mode, browser)
     if cached is not None:
         logger.info("Cache hit for %s", normalized)
         return ScrapeResponse.model_validate_json(cached)
@@ -82,7 +82,9 @@ def scrape(url: str, mode: Mode = "html", browser: BrowserOption = "auto") -> Sc
         try:
             parsed = parse_page(parser, page)
         except ParseError:
-            if page.fetched_with == "browser" or browser == "never" or not BROWSER_ENABLED:
+            # Only retry with the browser when it could help: an error page (404, 500) will
+            # be the same error page in a browser, so don't spend a browser run on it.
+            if page.fetched_with == "browser" or browser == "never" or not BROWSER_ENABLED or not page.ok:
                 raise
             logger.info("Parsing %s failed, retrying with the browser", page.url)
             page = fetch_with_browser(page.url)
@@ -93,14 +95,18 @@ def scrape(url: str, mode: Mode = "html", browser: BrowserOption = "auto") -> Sc
         result.parsed = parsed
     else:
         result.content = clean_html_response(page)
-    set_cached(normalized, mode, result.model_dump_json(), result.ok)
+    set_cached(normalized, mode, browser, result.model_dump_json(), result.ok)
     return result
 
-@app.get("/scrape", response_model=ScrapeResponse,
-         dependencies=[Depends(require_api_key)])
+@app.get("/scrape", response_model=ScrapeResponse)
 @limiter.limit("10/minute")
 def scrape_url(request: Request, url: str,
-               mode: Mode = "html", browser: BrowserOption = "auto"):
+               mode: Mode = "html", browser: BrowserOption = "auto",
+               api_key: str | None = Security(api_key_header)):
+    # The key is checked here, inside the rate-limited function, so that wrong keys count
+    # toward the limit too. As a dependency it would run before the limiter and 401s would be free.
+    if not is_valid_key(api_key):
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
     try:
         return scrape(url, mode, browser)
     except ScrapeError as e:

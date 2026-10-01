@@ -17,7 +17,8 @@ Every scrape needs a valid API key. Keys are handed out by hand: there is no sig
 | `GET /`       | Public. Shows the web form.                                            |
 | `POST /`      | The web form. Needs a valid key in the form's "API key" field.         |
 | `GET /scrape` | JSON API. Needs a valid key in the `X-API-Key` header.                 |
-| `/docs`, `/redoc`, `/openapi.json` | Disabled (404).                                   |
+| `GET /docs`   | Public. The hand-written API docs page.                                |
+| `/redoc`, `/openapi.json` | FastAPI's generated docs are disabled (404).               |
 
 ## Generating a key
 
@@ -73,7 +74,7 @@ resp = requests.get(
     "https://ihabov-universal-scraper.fly.dev/scrape",
     params={"url": "https://example.com", "mode": "html"},  # mode: "html" or "json"
     headers={"X-API-Key": os.environ["SCRAPER_API_KEY"]},
-    timeout=30,
+    timeout=120,  # a slow site can use the 25-second fetch budget and then a browser run
 )
 resp.raise_for_status()
 print(resp.json()["content"])

@@ -1,7 +1,6 @@
 import logging
 import os
 import secrets
-from fastapi import HTTPException, Security
 from fastapi.security import APIKeyHeader
 
 logger = logging.getLogger(__name__)
@@ -20,8 +19,3 @@ def is_valid_key(key: str | None) -> bool:
     # Check every key with compare_digest so timing doesn't leak which key matched.
     matches = [secrets.compare_digest(key.encode(), k.encode()) for k in API_KEYS]
     return any(matches)
-
-def require_api_key(key: str | None = Security(api_key_header)) -> str:
-    if not is_valid_key(key):
-        raise HTTPException(status_code=401, detail="Invalid or missing API key")
-    return key

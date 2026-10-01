@@ -27,25 +27,27 @@ if redis_client is None:
     logger.warning("REDIS_URL is not set, caching is disabled.")
 
 
-def cache_key(url: str, mode: str) -> str:
-    return f"scrape:{mode}:{url}"
+def cache_key(url: str, mode: str, browser: str) -> str:
+    # The browser option is part of the key: a page that came back blocked with browser=never
+    # must not be served to a browser=auto request, and browser=always must not get an http result.
+    return f"scrape:{mode}:{browser}:{url}"
 
 
-def get_cached(url: str, mode: str) -> str | None:
+def get_cached(url: str, mode: str, browser: str) -> str | None:
     if redis_client is None:
         return None
     try:
-        return redis_client.get(cache_key(url, mode))
+        return redis_client.get(cache_key(url, mode, browser))
     except RedisError as e:
         logger.warning("Redis read failed: %s", e)
         return None
 
 
-def set_cached(url: str, mode: str, value: str, ok: bool) -> None:
+def set_cached(url: str, mode: str, browser: str, value: str, ok: bool) -> None:
     if redis_client is None:
         return
     ttl = CACHE_TTL_SECONDS if ok else FAILED_CACHE_TTL_SECONDS
     try:
-        redis_client.set(cache_key(url, mode), value, ex=ttl)
+        redis_client.set(cache_key(url, mode, browser), value, ex=ttl)
     except RedisError as e:
         logger.warning("Redis write failed: %s", e)

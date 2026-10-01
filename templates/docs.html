@@ -59,7 +59,7 @@
     </tr>
     <tr>
       <td><code>browser</code></td><td>string</td><td>No</td>
-      <td><code>auto</code> (default): fetch the page normally, and only if the site blocks it (a bot check, or status <code>202</code>, <code>403</code>, <code>429</code> or <code>503</code>), try again with a real headless browser. With <code>mode=json</code>, also when the page doesn't contain the expected data.<br><code>never</code>: don't use the browser.<br><code>always</code>: go straight to the browser, for sites you know need it. Slower: a few seconds per page.</td>
+      <td><code>auto</code> (default): fetch the page normally, and only if the site blocks it (a bot check, or status <code>202</code>, <code>403</code>, <code>429</code> or <code>503</code>), try again with a real headless browser. With <code>mode=json</code>, also when a page that loaded fine doesn't contain the expected data (an error page like a <code>404</code> is not retried).<br><code>never</code>: don't use the browser.<br><code>always</code>: go straight to the browser, for sites you know need it. Slower: a few seconds per page.</td>
     </tr>
   </table>
 
@@ -166,6 +166,7 @@
     <tr><td><code>422</code></td><td>A parameter is missing or has an invalid value, like <code>mode=pdf</code>. The <code>detail</code> field is a list saying which parameter is wrong.</td></tr>
     <tr><td><code>429</code></td><td>Rate limit exceeded. The body is <code>{"error": "Rate limit exceeded: 10 per 1 minute"}</code>.</td></tr>
     <tr><td><code>502</code></td><td>The page couldn't be fetched: the site is down, timed out, or redirected too many times. With <code>mode=json</code>, also when the page didn't contain the expected data (for example a 404 page, or the site changed its layout).</td></tr>
+    <tr><td><code>503</code></td><td>Every headless browser was busy for 15 seconds. Wait a moment and try again.</td></tr>
   </table>
 
   <h2 id="rate-limits">Rate limits</h2>
@@ -184,7 +185,7 @@ response = requests.get(
     "https://ihabov-universal-scraper.fly.dev/scrape",
     params={"url": "https://scrapeme.live/shop/Bulbasaur/", "mode": "json"},
     headers={"X-API-Key": "YOUR_API_KEY"},
-    timeout=60,
+    timeout=120,
 )
 response.raise_for_status()
 
@@ -207,11 +208,12 @@ console.log(data.content);</code></pre>
     <tr><th>What</th><th>Limit</th></tr>
     <tr><td>Page size</td><td>5 MB</td></tr>
     <tr><td>Timeout per request to the target site</td><td>10 seconds</td></tr>
-    <tr><td>Retries</td><td>Up to 3, with increasing waits, on timeouts and on <code>429</code>, <code>502</code>, <code>503</code>, <code>504</code> from the target site</td></tr>
+    <tr><td>Total time for the plain fetch</td><td>25 seconds, covering all retries, waits between them and redirect hops. After that the page counts as unreachable (<code>502</code>, or the browser with <code>browser=auto</code>).</td></tr>
+    <tr><td>Retries</td><td>Up to 3, with increasing waits, on timeouts and on <code>429</code>, <code>502</code>, <code>503</code>, <code>504</code> from the target site, as long as they fit in the 25 seconds</td></tr>
     <tr><td>Redirects</td><td>Followed automatically, up to 5. Every hop is checked against the internal-address block.</td></tr>
     <tr><td>Content types</td><td>HTML only (<code>text/html</code>, <code>application/xhtml+xml</code>)</td></tr>
-    <tr><td>Browser</td><td>Up to 2 at a time, 30 seconds to load the page plus up to 20 seconds for a bot check to finish. Images, fonts and video are not loaded, and every request the browser makes is checked against the internal-address block.</td></tr>
+    <tr><td>Browser</td><td>Up to 2 at a time (a request waits up to 15 seconds for a free one, then gets <code>503</code>), 30 seconds to load the page, up to 20 seconds for a bot check to finish, and up to 5 seconds for scripts to finish rendering. Images, fonts and video are not loaded. Every request the browser makes is checked against the internal-address block, and redirect hops are checked after the page loads.</td></tr>
   </table>
-  <p><strong>First request after a quiet period:</strong> the server sleeps when idle, and waking it adds 2 to 5 seconds. Use a client timeout of at least 60 seconds to also cover retries on slow sites.</p>
+  <p><strong>First request after a quiet period:</strong> the server sleeps when idle, and waking it adds 2 to 5 seconds. Use a client timeout of at least 120 seconds: a slow site can use the whole 25-second fetch budget and then a full browser run on top.</p>
 </body>
 </html>

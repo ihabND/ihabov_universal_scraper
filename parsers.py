@@ -30,14 +30,36 @@ def to_price(text: str) -> float | None:
 def text_of(tag) -> str | None:
     return tag.get_text(strip=True) if tag else None
 
+def as_list(value) -> list:
+    if value is None:
+        return []
+    return value if isinstance(value, list) else [value]
+
+def names_of(value) -> list[str]:
+    """Names from a JSON-LD value that may be one object, a list of objects, or plain strings."""
+    names = []
+    for item in as_list(value):
+        name = item.get("name") if isinstance(item, dict) else item
+        if isinstance(name, str) and name:
+            names.append(html.unescape(name))
+    return names
+
+def json_ld_items(data):
+    """Every object in a JSON-LD document, whatever its shape: one object, a list, or an @graph."""
+    if isinstance(data, list):
+        for item in data:
+            yield from json_ld_items(item)
+    elif isinstance(data, dict):
+        yield data
+        yield from json_ld_items(data.get("@graph"))
+
 def find_json_ld(soup: BeautifulSoup, type_name: str) -> dict | None:
     for tag in soup.find_all("script", {"type": "application/ld+json"}):
         try:
             data = json.loads(tag.string or "")
         except ValueError:
             continue
-        items = data if isinstance(data, list) else data.get("@graph", [data])
-        for item in items:
+        for item in json_ld_items(data):
             types = item.get("@type")
             if type_name == types or (isinstance(types, list) and type_name in types):
                 return item
@@ -80,7 +102,8 @@ def parse_car(soup: BeautifulSoup, url: str) -> dict:
 
     rating = soup.select_one("div.rarity-rating")
     image = soup.select_one("#main-product-image")
-    car["price_eur"] = digits_only(soup.select_one("span.amount").get_text())
+    price = soup.select_one("span.amount")
+    car["price_eur"] = digits_only(price.get_text()) if price else None
     car["availability"] = text_of(soup.select_one("div.availability"))
     car["rating"] = digits_only(rating.get("data-rating", "")) if rating else None
     car["seller"] = text_of(soup.select_one("p.seller"))
@@ -181,7 +204,7 @@ def parse_ipon_product(soup: BeautifulSoup, url: str) -> dict:
     return {
         "name": product.get("name"),
         "brand": (product.get("brand") or {}).get("name"),
-        "price": offer.get("price") or None,
+        "price": to_price(str(offer.get("price") or "")),
         "currency": offer.get("priceCurrency"),
         "availability": (offer.get("availability") or "").rsplit("/", 1)[-1] or None,
         "shipping_price": shipping.get("value"),
@@ -193,6 +216,24 @@ def parse_ipon_product(soup: BeautifulSoup, url: str) -> dict:
         "image": images[0] if isinstance(images, list) and images else images or None,
         "url": offer.get("url") or url,
     }
+
+def instruction_steps(value) -> list[str]:
+    """Flatten recipeInstructions: plain strings, HowToStep objects, or HowToSection groups of steps."""
+    steps = []
+    for item in as_list(value):
+        if isinstance(item, str):
+            text = item
+        elif isinstance(item, dict) and "itemListElement" in item:
+            steps.extend(instruction_steps(item["itemListElement"]))
+            continue
+        elif isinstance(item, dict):
+            text = item.get("text") or ""
+        else:
+            continue
+        text = html.unescape(text).strip()
+        if text:
+            steps.append(text)
+    return steps
 
 def parse_recipe(soup: BeautifulSoup, url: str) -> dict:
     recipe = find_json_ld(soup, "Recipe")
@@ -210,7 +251,7 @@ def parse_recipe(soup: BeautifulSoup, url: str) -> dict:
     return {
         "name": html.unescape(recipe.get("name") or ""),
         "description": html.unescape(recipe.get("description") or ""),
-        "author": [a.get("name") for a in recipe.get("author") or [] if a.get("name")],
+        "author": names_of(recipe.get("author")),
         "rating": to_price(str(rating.get("ratingValue", ""))),
         "rating_count": digits_only(str(rating.get("ratingCount", ""))),
         "prep_minutes": to_minutes(recipe.get("prepTime")),
@@ -220,21 +261,13 @@ def parse_recipe(soup: BeautifulSoup, url: str) -> dict:
         "categories": recipe.get("recipeCategory") or [],
         "cuisine": recipe.get("recipeCuisine") or [],
         "ingredients": [html.unescape(i) for i in recipe.get("recipeIngredient") or []],
-        "instructions": [html.unescape(s.get("text", "")).strip() for s in recipe.get("recipeInstructions") or []],
+        "instructions": instruction_steps(recipe.get("recipeInstructions")),
         "nutrition": {k: v for k, v in (recipe.get("nutrition") or {}).items() if not k.startswith("@")},
         "image": image,
         "date_published": (recipe.get("datePublished") or "")[:10] or None,
     }
 
 IMDB_TYPES = ("Movie", "TVSeries", "TVMiniSeries", "TVEpisode", "VideoGame")
-
-def as_list(value) -> list:
-    if value is None:
-        return []
-    return value if isinstance(value, list) else [value]
-
-def names_of(value) -> list[str]:
-    return [html.unescape(item["name"]) for item in as_list(value) if item.get("name")]
 
 def parse_movie(soup: BeautifulSoup, url: str) -> dict:
     movie = next((m for t in IMDB_TYPES if (m := find_json_ld(soup, t))), None)
