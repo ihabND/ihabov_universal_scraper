@@ -31,8 +31,9 @@
   // ---- Elements and state ----
   const urlEl = $("#url"), goBtn = $("#go"), keyEl = $("#key"), keyfield = $("#keyfield"), hintEl = $("#hint");
   const stripEl = $("#strip"), tabsEl = $("#tabs"), bodyEl = $("#body"), snipEl = $("#snipcode");
-  const mode = () => (form.querySelector("input[name=mode]:checked") || {}).value || "html";
-  const browser = () => (form.querySelector("input[name=browser]:checked") || {}).value || "auto";
+  // The radios live outside the <form> element (linked with form="scrape-form"), so look them up document-wide.
+  const mode = () => (document.querySelector("input[name=mode]:checked") || {}).value || "html";
+  const browser = () => (document.querySelector("input[name=browser]:checked") || {}).value || "auto";
   const SITES = JSON.parse($("#sites-data").textContent);
   let lang = "curl", controller = null, timer = null;
 
@@ -50,8 +51,8 @@
       : "HTML returns the page's formatted source. Auto uses the browser only when a site blocks the plain fetch. The key stays in this browser.";
     renderSnippet();
   }
-  $$("input[name=mode], input[name=browser]", form).forEach(r => r.addEventListener("change", paintHint));
-  function setOption(name, value) { const r = form.querySelector('input[name=' + name + '][value="' + value + '"]'); if (r) { r.checked = true; } }
+  $$("input[name=mode], input[name=browser]").forEach(r => r.addEventListener("change", paintHint));
+  function setOption(name, value) { const r = document.querySelector('input[name=' + name + '][value="' + value + '"]'); if (r) { r.checked = true; } }
 
   // ---- Helpers ----
   const hostOf = url => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch (e) { return ""; } };
@@ -197,19 +198,12 @@
   }
   function renderHTML(html) {
     tabsEl.hidden = false;
-    tabsEl.innerHTML = '<button type="button" data-view="preview" aria-selected="true">Preview</button><button type="button" data-view="source" aria-selected="false">Source</button><button type="button" data-view="text" aria-selected="false">Text only</button><span class="spacer"></span><button class="tool" type="button" id="copy">Copy HTML</button>';
+    tabsEl.innerHTML = '<button type="button" data-view="source" aria-selected="true">HTML</button><button type="button" data-view="text" aria-selected="false">Text only</button><span class="spacer"></span><button class="tool" type="button" id="copy">Copy HTML</button>';
     const lines = html.split("\n");
     const highlighted = lines.map(l => '<span class="ln"></span>' + esc(l)
       .replace(/(&lt;\/?)([a-zA-Z][a-zA-Z0-9-]*)/g, '$1<span class="tag">$2</span>')
       .replace(/\s([a-zA-Z-]+)=(&quot;[^&]*&quot;)/g, ' <span class="attr">$1</span>=$2')).join("\n");
     const views = {
-      preview: () => {
-        const frame = document.createElement("iframe"); frame.className = "preview"; frame.setAttribute("sandbox", ""); frame.setAttribute("title", "Rendered page, scripts off");
-        frame.srcdoc = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:;">' + html;
-        bodyEl.innerHTML = ""; bodyEl.appendChild(frame);
-        const p = document.createElement("p"); p.className = "hint"; p.style.cssText = "margin:10px 0 0;text-align:left"; p.textContent = "Rendered without scripts or external requests, so images and styles from the site are not loaded.";
-        bodyEl.appendChild(p);
-      },
       source: () => { bodyEl.innerHTML = '<pre class="code lines">' + highlighted + '</pre>'; },
       text: () => {
         const doc = new DOMParser().parseFromString(html, "text/html");
@@ -218,7 +212,7 @@
         bodyEl.innerHTML = '<pre class="code">' + esc(text || "(no text on this page)") + '</pre>';
       },
     };
-    views.preview();
+    views.source();
     wireTabs(views);
     $("#copy").addEventListener("click", e => copyText(html, e.target));
   }
