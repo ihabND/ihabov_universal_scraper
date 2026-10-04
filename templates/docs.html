@@ -1,140 +1,100 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>API Docs · Ihabov Universal Scraper</title>
-  <style>
-    body { font-family: system-ui, sans-serif; max-width: 860px; margin: 2rem auto; padding: 0 1rem; color: #222; line-height: 1.5; }
-    h2 { margin-top: 2.5rem; }
-    a { color: inherit; }
-    .meta { color: #555; }
-    nav a { margin-right: 1rem; }
-    code { background: #f5f5f5; padding: .1rem .3rem; border-radius: 3px; }
-    pre { background: #f5f5f5; padding: 1rem; overflow-x: auto; }
-    pre code { background: none; padding: 0; }
-    table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
-    th, td { text-align: left; padding: .5rem; border-bottom: 1px solid #ddd; vertical-align: top; }
-    th { font-weight: 600; }
-    .method { font-weight: 600; background: #222; color: #fff; padding: .15rem .5rem; border-radius: 3px; }
-  </style>
-</head>
-<body>
-  <p class="meta"><a href="/">&larr; Back to the scraper</a></p>
-  <h1>API Docs</h1>
-  <p>Fetch any public web page and get back its formatted HTML, or, on supported sites, the page's data as structured JSON. The scraper uses a real browser's network fingerprint, follows redirects safely, and blocks requests to internal addresses.</p>
+{% extends "base.html" %}
+{% set page = "docs" %}
+{% block title %}API Docs · Ihabov Universal Scraper{% endblock %}
+{% block content %}
+<div class="page">
+  <div class="docs">
+    <nav class="side" aria-label="Sections">
+      <span class="eyebrow">On this page</span>
+      <a href="#authentication">Authentication</a>
+      <a href="#scrape">GET /scrape</a>
+      <a href="#response">Response</a>
+      <a href="#json">JSON mode</a>
+      <a href="#errors">Errors</a>
+      <a href="#rate-limits">Rate limits</a>
+      <a href="#examples">Examples</a>
+      <a href="#limits">Limits</a>
+    </nav>
 
-  <nav class="meta">
-    <a href="#authentication">Authentication</a>
-    <a href="#scrape">GET /scrape</a>
-    <a href="#response">Response</a>
-    <a href="#json">JSON mode</a>
-    <a href="#errors">Errors</a>
-    <a href="#rate-limits">Rate limits</a>
-    <a href="#examples">Examples</a>
-    <a href="#limits">Limits</a>
-  </nav>
+    <div class="content">
+      <span class="eyebrow">API reference</span>
+      <h1>One endpoint, two kinds of output.</h1>
+      <p class="lede">Fetch any public web page and get back its formatted HTML, or, on supported sites, the page's data as structured JSON. The scraper uses a real browser's network fingerprint, follows redirects safely, and blocks requests to internal addresses.</p>
 
-  <h2>Base URL</h2>
-  <pre><code>https://ihabov-universal-scraper.fly.dev</code></pre>
+      <h2 id="base-url">Base URL</h2>
+      <div class="codeblock"><pre class="code" id="code-base">https://ihabov-universal-scraper.fly.dev</pre><button class="tool copy" type="button" data-copy-target="code-base">Copy</button></div>
 
-  <h2 id="authentication">Authentication</h2>
-  <p>Every request needs an API key, sent in the <code>X-API-Key</code> header. Keys are handed out personally; there is no sign-up.</p>
-  <pre><code>X-API-Key: YOUR_API_KEY</code></pre>
-  <p>Don't put the key in the URL, since query strings end up in logs and browser history. A missing or wrong key returns <code>401</code>.</p>
+      <h2 id="authentication">Authentication</h2>
+      <p>Every request needs an API key, sent in the <code>X-API-Key</code> header. Keys are handed out personally; there is no sign-up.</p>
+      <div class="codeblock"><pre class="code" id="code-auth">X-API-Key: YOUR_API_KEY</pre><button class="tool copy" type="button" data-copy-target="code-auth">Copy</button></div>
+      <p>Don't put the key in the URL, since query strings end up in logs and browser history. A missing or wrong key returns <code>401</code>.</p>
 
-  <h2 id="scrape"><span class="method">GET</span> /scrape</h2>
-  <p>Fetches a page and returns its content.</p>
+      <h2 id="scrape"><span class="method">GET</span>/scrape</h2>
+      <p>Fetches a page and returns its content.</p>
+      <h3>Query parameters</h3>
+      <div class="tablewrap">
+        <table>
+          <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
+          <tr>
+            <td><code>url</code></td><td>string</td><td>Yes</td>
+            <td>The page to scrape. Must start with <code>http://</code> or <code>https://</code>. URL-encode it if it contains <code>&amp;</code> or <code>?</code> (most HTTP libraries do this for you).</td>
+          </tr>
+          <tr>
+            <td><code>mode</code></td><td>string</td><td>No</td>
+            <td><code>html</code> (default): the full HTML, formatted, as one string in <code>content</code>.<br><code>json</code>: the page's data as structured JSON in <code>parsed</code>. Only works on <a href="#json">supported sites</a>.</td>
+          </tr>
+          <tr>
+            <td><code>browser</code></td><td>string</td><td>No</td>
+            <td><code>auto</code> (default): fetch the page normally, and only if the site blocks it (a bot check, or status <code>202</code>, <code>403</code>, <code>429</code> or <code>503</code>), try again with a real headless browser. With <code>mode=json</code>, also when a page that loaded fine doesn't contain the expected data (an error page like a <code>404</code> is not retried).<br><code>never</code>: don't use the browser.<br><code>always</code>: go straight to the browser, for sites you know need it. Slower: a few seconds per page.</td>
+          </tr>
+        </table>
+      </div>
 
-  <h3>Query parameters</h3>
-  <table>
-    <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
-    <tr>
-      <td><code>url</code></td><td>string</td><td>Yes</td>
-      <td>The page to scrape. Must start with <code>http://</code> or <code>https://</code>. URL-encode it if it contains <code>&amp;</code> or <code>?</code> (most HTTP libraries do this for you).</td>
-    </tr>
-    <tr>
-      <td><code>mode</code></td><td>string</td><td>No</td>
-      <td><code>html</code> (default): the full HTML, formatted, as one string in <code>content</code>.<br><code>json</code>: the page's data as structured JSON in <code>parsed</code>. Only works on <a href="#json">supported sites</a>.</td>
-    </tr>
-    <tr>
-      <td><code>browser</code></td><td>string</td><td>No</td>
-      <td><code>auto</code> (default): fetch the page normally, and only if the site blocks it (a bot check, or status <code>202</code>, <code>403</code>, <code>429</code> or <code>503</code>), try again with a real headless browser. With <code>mode=json</code>, also when a page that loaded fine doesn't contain the expected data (an error page like a <code>404</code> is not retried).<br><code>never</code>: don't use the browser.<br><code>always</code>: go straight to the browser, for sites you know need it. Slower: a few seconds per page.</td>
-    </tr>
-  </table>
-
-  <h2 id="response">Response</h2>
-  <p>A successful call returns <code>200</code> with this JSON body:</p>
-  <table>
-    <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-    <tr><td><code>url</code></td><td>string</td><td>The normalized URL that was scraped.</td></tr>
-    <tr><td><code>status_code</code></td><td>integer</td><td>The HTTP status the <em>target site</em> returned.</td></tr>
-    <tr><td><code>ok</code></td><td>boolean</td><td><code>true</code> if the target site's status was below 400.</td></tr>
-    <tr><td><code>fetched_with</code></td><td>string</td><td><code>http</code> for a normal fetch, <code>browser</code> when the headless browser was used.</td></tr>
-    <tr><td><code>content</code></td><td>string or null</td><td>The formatted HTML with <code>mode=html</code>, otherwise <code>null</code>.</td></tr>
-    <tr><td><code>parsed</code></td><td>object, array of objects or null</td><td>The page's data with <code>mode=json</code>, otherwise <code>null</code>. See <a href="#json">JSON mode</a>.</td></tr>
-  </table>
-  <p><code>ok</code> and <code>status_code</code> describe the page, not the API call. A page that returns <code>404</code> still comes back as a <code>200</code> from the API, with <code>"ok": false</code>, so you can see the error page's content.</p>
-
-  <h3>Example response (<code>mode=html</code>)</h3>
-  <pre><code>{
+      <h2 id="response">Response</h2>
+      <p>A successful call returns <code>200</code> with this JSON body:</p>
+      <div class="tablewrap">
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+          <tr><td><code>url</code></td><td>string</td><td>The normalized URL that was scraped.</td></tr>
+          <tr><td><code>status_code</code></td><td>integer</td><td>The HTTP status the <em>target site</em> returned.</td></tr>
+          <tr><td><code>ok</code></td><td>boolean</td><td><code>true</code> if the target site's status was below 400.</td></tr>
+          <tr><td><code>fetched_with</code></td><td>string</td><td><code>http</code> for a normal fetch, <code>browser</code> when the headless browser was used.</td></tr>
+          <tr><td><code>content</code></td><td>string or null</td><td>The formatted HTML with <code>mode=html</code>, otherwise <code>null</code>.</td></tr>
+          <tr><td><code>parsed</code></td><td>object, array of objects or null</td><td>The page's data with <code>mode=json</code>, otherwise <code>null</code>. See <a href="#json">JSON mode</a>.</td></tr>
+        </table>
+      </div>
+      <p><code>ok</code> and <code>status_code</code> describe the page, not the API call. A page that returns <code>404</code> still comes back as a <code>200</code> from the API, with <code>"ok": false</code>, so you can see the error page's content.</p>
+      <h3>Example response (<code>mode=html</code>)</h3>
+      <div class="codeblock"><pre class="code" id="code-html">{
   "url": "https://example.com/",
   "status_code": 200,
   "ok": true,
   "fetched_with": "http",
   "content": "&lt;!DOCTYPE html&gt;\n&lt;html lang=\"en\"&gt;\n &lt;head&gt;\n  &lt;title&gt;\n   Example Domain\n  &lt;/title&gt;\n ...",
   "parsed": null
-}</code></pre>
+}</pre><button class="tool copy" type="button" data-copy-target="code-html">Copy</button></div>
 
-  <h2 id="json">JSON mode</h2>
-  <p>With <code>mode=json</code>, pages on these sites come back as structured JSON. Other sites return <code>400</code>, and the scraper checks this before fetching the page.</p>
-  <table>
-    <tr><th>Site</th><th>Pages</th><th><code>parsed</code> is</th></tr>
-    <tr>
-      <td><code>webscraper.io</code></td><td>A car page under <code>/test-sites/product/</code></td>
-      <td>One object: brand, model, year, engine, drivetrain, power_hp, country, mileage_km, condition, exterior_color, interior_color, body, price_eur, availability, rating, seller, transmission, tags, colors, image</td>
-    </tr>
-    <tr>
-      <td><code>scrapeme.live</code></td><td>A product page, like <code>/shop/Bulbasaur/</code></td>
-      <td>One object: name, price, description, sku, categories, tags, stock</td>
-    </tr>
-    <tr>
-      <td><code>books.toscrape.com</code></td><td>The home page, <code>/catalogue/page-N.html</code> or a category page</td>
-      <td>A list of books: title, price, stock, rating (1&ndash;5), url</td>
-    </tr>
-    <tr>
-      <td><code>books.toscrape.com</code></td><td>A book page, like <code>/catalogue/a-light-in-the-attic_1000/index.html</code></td>
-      <td>One object: title, genre, price, price_incl_tax, tax, stock, rating (1&ndash;5), reviews, upc, description, image</td>
-    </tr>
-    <tr>
-      <td><code>quotes.toscrape.com</code></td><td>The home page, <code>/page/N/</code> or <code>/tag/&lt;tag&gt;/</code></td>
-      <td>A list of quotes: quote, author, tags</td>
-    </tr>
-    <tr>
-      <td><code>knjizare-vulkan.rs</code></td><td>A product page, like <code>/domaci-klasici/25486-tvrdava</code></td>
-      <td>One object: name, publisher, price, currency, isbn, sku, product_id, description, image, url</td>
-    </tr>
-    <tr>
-      <td><code>iponcomp.com</code></td><td>A product page, like <code>/shop/product/&lt;name&gt;/1871163</code></td>
-      <td>One object: name, brand, price (null when the shop lists no price), currency, availability, shipping_price, category, sku, mpn, ean, description, image, url</td>
-    </tr>
-    <tr>
-      <td><code>allrecipes.com</code></td><td>A recipe page, like <code>/recipe/10813/best-chocolate-chip-cookies/</code> or <code>/apple-cider-bath-cinnamon-rolls-recipe-12111965</code></td>
-      <td>One object: name, description, author, rating, rating_count, prep/cook/total_minutes, yield, categories, cuisine, ingredients, instructions, nutrition, image, date_published</td>
-    </tr>
-    <tr>
-      <td><code>imdb.com</code></td><td>A title page, like <code>/title/tt0111161/</code> (movies, series and episodes). Needs the browser, which <code>browser=auto</code> uses automatically.</td>
-      <td>One object: title, alternate_title, type, year, date_published, content_rating, genres, rating, rating_count, runtime_minutes, directors, writers, actors, keywords, description, poster, trailer, url</td>
-    </tr>
-  </table>
-  <p>Try it with an example page:</p>
-  <ul>
-    {% for parser in parsers %}<li><code>{{ parser.example }}</code></li>
-    {% endfor %}
-  </ul>
-
-  <h3>Example response (<code>mode=json</code>)</h3>
-  <pre><code>{
+      <h2 id="json">JSON mode</h2>
+      <p>With <code>mode=json</code>, pages on these sites come back as structured JSON. Other sites return <code>400</code>, and the scraper checks this before fetching the page.</p>
+      <div class="tablewrap">
+        <table>
+          <tr><th>Site</th><th>Pages</th><th><code>parsed</code> is</th></tr>
+          {% for p in parsers %}
+          <tr>
+            <td><code>{{ p.host }}</code></td>
+            <td>{{ p.pages }}</td>
+            <td><span class="pill">{{ "a list of objects" if p.shape == "list" else "one object" }}</span><br>{{ p.fields }}</td>
+          </tr>
+          {% endfor %}
+        </table>
+      </div>
+      <p>Try it with an example page:</p>
+      <ul>
+        {% for p in parsers %}<li><a href="/?url={{ p.example | urlencode }}&amp;mode=json"><code>{{ p.example }}</code></a></li>
+        {% endfor %}
+      </ul>
+      <h3>Example response (<code>mode=json</code>)</h3>
+      <div class="codeblock"><pre class="code" id="code-json">{
   "url": "https://scrapeme.live/shop/Bulbasaur/",
   "status_code": 200,
   "ok": true,
@@ -149,37 +109,37 @@
     "tags": ["bulbasaur", "Overgrow", "Seed"],
     "stock": 45
   }
-}</code></pre>
+}</pre><button class="tool copy" type="button" data-copy-target="code-json">Copy</button></div>
 
-  <h2 id="errors">Errors</h2>
-  <p>Errors use standard HTTP status codes and a JSON body with a <code>detail</code> message:</p>
-  <pre><code>{
+      <h2 id="errors">Errors</h2>
+      <p>Errors use standard HTTP status codes and a JSON body with a <code>detail</code> message:</p>
+      <div class="codeblock"><pre class="code" id="code-err">{
   "detail": "Invalid URL, only HTTP and HTTPS."
-}</code></pre>
-  <table>
-    <tr><th>Status</th><th>Meaning</th></tr>
-    <tr><td><code>400</code></td><td>The URL is invalid, or uses a scheme other than <code>http</code>/<code>https</code>, or <code>mode=json</code> was sent for a page that isn't <a href="#json">supported</a>, or <code>browser=always</code> was sent to a server where the browser is turned off.</td></tr>
-    <tr><td><code>401</code></td><td>The API key is missing or wrong.</td></tr>
-    <tr><td><code>403</code></td><td>The URL points to a private or internal address (like <code>localhost</code> or <code>192.168.x.x</code>), which is not allowed.</td></tr>
-    <tr><td><code>413</code></td><td>The page is larger than 5 MB.</td></tr>
-    <tr><td><code>415</code></td><td>The URL is not an HTML page (for example a PDF, image or JSON file).</td></tr>
-    <tr><td><code>422</code></td><td>A parameter is missing or has an invalid value, like <code>mode=pdf</code>. The <code>detail</code> field is a list saying which parameter is wrong.</td></tr>
-    <tr><td><code>429</code></td><td>Rate limit exceeded. The body is <code>{"error": "Rate limit exceeded: 10 per 1 minute"}</code>.</td></tr>
-    <tr><td><code>502</code></td><td>The page couldn't be fetched: the site is down, timed out, or redirected too many times. With <code>mode=json</code>, also when the page didn't contain the expected data (for example a 404 page, or the site changed its layout).</td></tr>
-    <tr><td><code>503</code></td><td>Every headless browser was busy for 15 seconds. Wait a moment and try again.</td></tr>
-  </table>
+}</pre><button class="tool copy" type="button" data-copy-target="code-err">Copy</button></div>
+      <div class="tablewrap">
+        <table>
+          <tr><th>Status</th><th>Meaning</th></tr>
+          <tr><td><code>400</code></td><td>The URL is invalid, or uses a scheme other than <code>http</code>/<code>https</code>, or <code>mode=json</code> was sent for a page that isn't <a href="#json">supported</a>, or <code>browser=always</code> was sent to a server where the browser is turned off.</td></tr>
+          <tr><td><code>401</code></td><td>The API key is missing or wrong.</td></tr>
+          <tr><td><code>403</code></td><td>The URL points to a private or internal address (like <code>localhost</code> or <code>192.168.x.x</code>), which is not allowed.</td></tr>
+          <tr><td><code>413</code></td><td>The page is larger than 5 MB.</td></tr>
+          <tr><td><code>415</code></td><td>The URL is not an HTML page (for example a PDF, image or JSON file).</td></tr>
+          <tr><td><code>422</code></td><td>A parameter is missing or has an invalid value, like <code>mode=pdf</code>. The <code>detail</code> field is a list saying which parameter is wrong.</td></tr>
+          <tr><td><code>429</code></td><td>Rate limit exceeded. The body is <code>{"error": "Rate limit exceeded: 10 per 1 minute"}</code>.</td></tr>
+          <tr><td><code>502</code></td><td>The page couldn't be fetched: the site is down, timed out, or redirected too many times. With <code>mode=json</code>, also when the page didn't contain the expected data (for example a 404 page, or the site changed its layout).</td></tr>
+          <tr><td><code>503</code></td><td>Every headless browser was busy for 15 seconds. Wait a moment and try again.</td></tr>
+        </table>
+      </div>
 
-  <h2 id="rate-limits">Rate limits</h2>
-  <p>Each client IP address can make <strong>10 requests per minute</strong>. Requests over the limit get <code>429</code>; wait a minute and try again.</p>
+      <h2 id="rate-limits">Rate limits</h2>
+      <p>Each client IP address can make <strong>10 requests per minute</strong>. Requests over the limit get <code>429</code>; wait a minute and try again. Requests with a wrong key count too.</p>
 
-  <h2 id="examples">Examples</h2>
-
-  <h3>curl</h3>
-  <pre><code>curl -H "X-API-Key: YOUR_API_KEY" \
-  "https://ihabov-universal-scraper.fly.dev/scrape?url=https://scrapeme.live/shop/Bulbasaur/&amp;mode=json"</code></pre>
-
-  <h3>Python</h3>
-  <pre><code>import requests
+      <h2 id="examples">Examples</h2>
+      <h3>curl</h3>
+      <div class="codeblock"><pre class="code" id="code-curl">curl -H "X-API-Key: YOUR_API_KEY" \
+  "https://ihabov-universal-scraper.fly.dev/scrape?url=https://scrapeme.live/shop/Bulbasaur/&amp;mode=json"</pre><button class="tool copy" type="button" data-copy-target="code-curl">Copy</button></div>
+      <h3>Python</h3>
+      <div class="codeblock"><pre class="code" id="code-py">import requests
 
 response = requests.get(
     "https://ihabov-universal-scraper.fly.dev/scrape",
@@ -189,10 +149,9 @@ response = requests.get(
 )
 response.raise_for_status()
 
-print(response.json())</code></pre>
-
-  <h3>JavaScript</h3>
-  <pre><code>const params = new URLSearchParams({ url: "https://example.com", mode: "html" });
+print(response.json())</pre><button class="tool copy" type="button" data-copy-target="code-py">Copy</button></div>
+      <h3>JavaScript</h3>
+      <div class="codeblock"><pre class="code" id="code-js">const params = new URLSearchParams({ url: "https://example.com", mode: "html" });
 
 const response = await fetch(
   `https://ihabov-universal-scraper.fly.dev/scrape?${params}`,
@@ -201,19 +160,23 @@ const response = await fetch(
 if (!response.ok) throw new Error((await response.json()).detail);
 
 const data = await response.json();
-console.log(data.content);</code></pre>
+console.log(data.content);</pre><button class="tool copy" type="button" data-copy-target="code-js">Copy</button></div>
 
-  <h2 id="limits">Limits and behaviour</h2>
-  <table>
-    <tr><th>What</th><th>Limit</th></tr>
-    <tr><td>Page size</td><td>5 MB</td></tr>
-    <tr><td>Timeout per request to the target site</td><td>10 seconds</td></tr>
-    <tr><td>Total time for the plain fetch</td><td>25 seconds, covering all retries, waits between them and redirect hops. After that the page counts as unreachable (<code>502</code>, or the browser with <code>browser=auto</code>).</td></tr>
-    <tr><td>Retries</td><td>Up to 3, with increasing waits, on timeouts and on <code>429</code>, <code>502</code>, <code>503</code>, <code>504</code> from the target site, as long as they fit in the 25 seconds</td></tr>
-    <tr><td>Redirects</td><td>Followed automatically, up to 5. Every hop is checked against the internal-address block.</td></tr>
-    <tr><td>Content types</td><td>HTML only (<code>text/html</code>, <code>application/xhtml+xml</code>)</td></tr>
-    <tr><td>Browser</td><td>Up to 2 at a time (a request waits up to 15 seconds for a free one, then gets <code>503</code>), 30 seconds to load the page, up to 20 seconds for a bot check to finish, and up to 5 seconds for scripts to finish rendering. Images, fonts and video are not loaded. Every request the browser makes is checked against the internal-address block, and redirect hops are checked after the page loads.</td></tr>
-  </table>
-  <p><strong>First request after a quiet period:</strong> the server sleeps when idle, and waking it adds 2 to 5 seconds. Use a client timeout of at least 120 seconds: a slow site can use the whole 25-second fetch budget and then a full browser run on top.</p>
-</body>
-</html>
+      <h2 id="limits">Limits and behaviour</h2>
+      <div class="tablewrap">
+        <table>
+          <tr><th>What</th><th>Limit</th></tr>
+          <tr><td>Page size</td><td>5 MB</td></tr>
+          <tr><td>Timeout per request to the target site</td><td>10 seconds</td></tr>
+          <tr><td>Total time for the plain fetch</td><td>25 seconds, covering all retries, waits between them and redirect hops. After that the page counts as unreachable (<code>502</code>, or the browser with <code>browser=auto</code>).</td></tr>
+          <tr><td>Retries</td><td>Up to 3, with increasing waits, on timeouts and on <code>429</code>, <code>502</code>, <code>503</code>, <code>504</code> from the target site, as long as they fit in the 25 seconds</td></tr>
+          <tr><td>Redirects</td><td>Followed automatically, up to 5. Every hop is checked against the internal-address block.</td></tr>
+          <tr><td>Content types</td><td>HTML only (<code>text/html</code>, <code>application/xhtml+xml</code>)</td></tr>
+          <tr><td>Browser</td><td>Up to 2 at a time (a request waits up to 15 seconds for a free one, then gets <code>503</code>), 30 seconds to load the page, up to 20 seconds for a bot check to finish, and up to 5 seconds for scripts to finish rendering. Images, fonts and video are not loaded. Every request the browser makes is checked against the internal-address block, and redirect hops are checked after the page loads.</td></tr>
+        </table>
+      </div>
+      <p><strong>First request after a quiet period:</strong> the server sleeps when idle, and waking it adds 2 to 5 seconds. Use a client timeout of at least 120 seconds: a slow site can use the whole 25-second fetch budget and then a full browser run on top.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

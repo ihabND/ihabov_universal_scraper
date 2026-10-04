@@ -18,6 +18,10 @@ class Parser:
     path: re.Pattern
     example: str
     parse: Callable[[BeautifulSoup, str], Parsed]
+    # Shown on the web pages (front page cards and the docs table), so both stay in sync with the code.
+    pages: str = ""        # which pages on the site this parser handles
+    shape: str = "object"  # "object" for one item, "list" for a list of items
+    fields: str = ""       # the keys in `parsed`, comma separated
 
 def digits_only(text: str) -> int | None:
     digits = re.sub(r"\D", "", text)
@@ -299,23 +303,45 @@ def parse_movie(soup: BeautifulSoup, url: str) -> dict:
 
 PARSERS = [
     Parser("webscraper.io", re.compile(r"/test-sites/product/[^/]+/?"),
-           "https://webscraper.io/test-sites/product/bmw-e24-635csi-1954-c002", parse_car),
+           "https://webscraper.io/test-sites/product/bmw-e24-635csi-1954-c002", parse_car,
+           pages="A car page under /test-sites/product/",
+           fields="brand, model, year, engine, drivetrain, power_hp, country, mileage_km, condition, exterior_color, "
+                  "interior_color, body, price_eur, availability, rating, seller, transmission, tags, colors, image"),
     Parser("scrapeme.live", re.compile(r"/shop/(?!page/)[^/]+/?"),
-           "https://scrapeme.live/shop/Bulbasaur/", parse_pokemon),
+           "https://scrapeme.live/shop/Bulbasaur/", parse_pokemon,
+           pages="A product page, like /shop/Bulbasaur/",
+           fields="name, price, description, sku, categories, tags, stock"),
     Parser("books.toscrape.com", re.compile(r"/(index\.html)?|/catalogue/(page-\d+\.html|category/.+)"),
-           "https://books.toscrape.com/catalogue/page-2.html", parse_books),
+           "https://books.toscrape.com/catalogue/page-2.html", parse_books,
+           pages="The home page, /catalogue/page-N.html or a category page", shape="list",
+           fields="title, price, stock, rating (1–5), url"),
     Parser("books.toscrape.com", re.compile(r"/catalogue/(?!category/)[^/]+_\d+/index\.html"),
-           "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html", parse_book),
+           "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html", parse_book,
+           pages="A book page, like /catalogue/a-light-in-the-attic_1000/index.html",
+           fields="title, genre, price, price_incl_tax, tax, stock, rating (1–5), reviews, upc, description, image"),
     Parser("quotes.toscrape.com", re.compile(r"/(page/\d+/?|tag/.+)?"),
-           "https://quotes.toscrape.com/page/2/", parse_quotes),
+           "https://quotes.toscrape.com/page/2/", parse_quotes,
+           pages="The home page, /page/N/ or /tag/<tag>/", shape="list",
+           fields="quote, author, tags"),
     Parser("knjizare-vulkan.rs", re.compile(r"/[^/]+/\d+-[^/]+/?"),
-           "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava", parse_vulkan_product),
+           "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava", parse_vulkan_product,
+           pages="A product page, like /domaci-klasici/25486-tvrdava",
+           fields="name, publisher, price, currency, isbn, sku, product_id, description, image, url"),
     Parser("iponcomp.com", re.compile(r"/shop/product/[^/]+/\d+/?"),
-           "https://iponcomp.com/shop/product/valueline-usb-32-gen-1-hub-4-ports-type-c-connection-cable/1871163", parse_ipon_product),
+           "https://iponcomp.com/shop/product/valueline-usb-32-gen-1-hub-4-ports-type-c-connection-cable/1871163", parse_ipon_product,
+           pages="A product page, like /shop/product/<name>/1871163",
+           fields="name, brand, price (null when the shop lists no price), currency, availability, shipping_price, "
+                  "category, sku, mpn, ean, description, image, url"),
     Parser("allrecipes.com", re.compile(r"/recipe/\d+/[^/]+/?|/[^/]+-recipe-\d+/?"),
-           "https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies/", parse_recipe),
+           "https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies/", parse_recipe,
+           pages="A recipe page, like /recipe/10813/best-chocolate-chip-cookies/ or /apple-cider-bath-cinnamon-rolls-recipe-12111965",
+           fields="name, description, author, rating, rating_count, prep_minutes, cook_minutes, total_minutes, yield, "
+                  "categories, cuisine, ingredients, instructions, nutrition, image, date_published"),
     Parser("imdb.com", re.compile(r"/title/tt\d+/?"),
-           "https://www.imdb.com/title/tt0111161/", parse_movie),
+           "https://www.imdb.com/title/tt0111161/", parse_movie,
+           pages="A title page, like /title/tt0111161/ (movies, series and episodes). Needs the browser, which browser=auto uses automatically.",
+           fields="title, alternate_title, type, year, date_published, content_rating, genres, rating, rating_count, "
+                  "runtime_minutes, directors, writers, actors, keywords, description, poster, trailer, url"),
 ]
 
 def find_parser(url: str) -> Parser | None:

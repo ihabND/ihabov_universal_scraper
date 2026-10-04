@@ -4,6 +4,7 @@ import logging
 from typing import Literal
 from fastapi import FastAPI, Form, HTTPException, Request, Security
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from auth import api_key_header, is_valid_key
@@ -48,6 +49,7 @@ app = FastAPI(
     openapi_url=None,
 )
 templates = Jinja2Templates(directory="templates")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 def client_ip(request: Request) -> str:
     return request.headers.get("fly-client-ip") or get_remote_address(request)
@@ -113,8 +115,10 @@ def scrape_url(request: Request, url: str,
         raise HTTPException(status_code=e.status_code, detail=str(e)) from e
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    return templates.TemplateResponse(request, "index.html", {"mode": "html", "browser": "auto"})
+def index(request: Request, url: str = "", mode: Mode = "html", browser: BrowserOption = "auto"):
+    # url/mode/browser in the query string only prefill the form, nothing is fetched on GET.
+    return templates.TemplateResponse(request, "index.html",
+                                      {"url": url, "mode": mode, "browser": browser, "parsers": PARSERS})
 
 @app.get("/docs", response_class=HTMLResponse)
 def docs(request: Request):
@@ -129,7 +133,8 @@ def index_submit(
     browser: BrowserOption = Form("auto"),
     api_key: str = Form(""),
 ):
-    context = {"url": url, "mode": mode, "browser": browser, "api_key": api_key}
+    # Fallback for browsers without JavaScript; the page itself normally calls /scrape directly.
+    context = {"url": url, "mode": mode, "browser": browser, "api_key": api_key, "parsers": PARSERS}
     status_code = 200
     if not is_valid_key(api_key):
         context["error"] = "Invalid or missing API key."
@@ -138,6 +143,9 @@ def index_submit(
         try:
             result = scrape(url, mode, browser)
             context["result"] = result
+            # Embedded in a <script type="application/json"> tag, so "<" is escaped: a scraped page
+            # containing "</script>" must not be able to break out of that tag.
+            context["seed"] = result.model_dump_json().replace("<", "\\u003c")
             if result.parsed is not None:
                 context["parsed_json"] = json.dumps(result.parsed, indent=2, ensure_ascii=False)
         except ScrapeError as e:
