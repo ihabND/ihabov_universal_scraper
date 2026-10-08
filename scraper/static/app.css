@@ -1,5 +1,5 @@
 /* Ihabov Scraper: a workbench, not a landing page. Warm neutral greys, one signal-orange accent,
-   IBM Plex for an instrument-panel feel. Light by default; dark follows the system or the toggle. */
+   IBM Plex for an instrument-panel feel. Light theme only. */
 
 :root {
   --bg: #f4f3f1; --panel: #ffffff; --panel-2: #f9f8f6; --line: #e3e0db; --line-2: #d2cec7;
@@ -9,22 +9,6 @@
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
   color-scheme: light;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #131211; --panel: #1b1a18; --panel-2: #211f1d; --line: #2e2b28; --line-2: #3d3935;
-    --fg: #ece9e4; --muted: #9c968d; --accent: #ff6b42; --accent-fg: #1b0b05; --accent-soft: #3a1f16;
-    --good: #5cc27e; --warn: #e2a33c; --bad: #ff6a5e; --code: #171614;
-    --k: #ece9e4; --s: #7fd29a; --n: #ff9a73; --b: #b89bff; --z: #7d776f;
-    color-scheme: dark;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #131211; --panel: #1b1a18; --panel-2: #211f1d; --line: #2e2b28; --line-2: #3d3935;
-  --fg: #ece9e4; --muted: #9c968d; --accent: #ff6b42; --accent-fg: #1b0b05; --accent-soft: #3a1f16;
-  --good: #5cc27e; --warn: #e2a33c; --bad: #ff6a5e; --code: #171614;
-  --k: #ece9e4; --s: #7fd29a; --n: #ff9a73; --b: #b89bff; --z: #7d776f;
-  color-scheme: dark;
 }
 
 /* ---- Base ---------------------------------------------------------------------------------- */
@@ -46,9 +30,8 @@ pre code { background: none; border: 0; padding: 0; font-size: inherit; }
 .mark i { width: 22px; height: 22px; border-radius: 5px; background: var(--accent); display: grid; place-items: center; color: var(--accent-fg); font: 700 12px var(--mono); font-style: normal; }
 .mark small { font: 500 11px var(--mono); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
 .topbar nav { margin-left: auto; display: flex; align-items: center; gap: 2px; }
-.topbar nav a, .iconbtn { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; font-weight: 500; background: none; border: 0; }
-.topbar nav a:hover, .topbar nav a[aria-current="page"], .iconbtn:hover { color: var(--fg); background: var(--panel-2); }
-.iconbtn svg { width: 16px; height: 16px; vertical-align: -3px; }
+.topbar nav a { color: var(--muted); text-decoration: none; padding: 6px 10px; border-radius: 6px; font-weight: 500; background: none; border: 0; }
+.topbar nav a:hover, .topbar nav a[aria-current="page"] { color: var(--fg); background: var(--panel-2); }
 
 /* ---- Shared controls ----------------------------------------------------------------------- */
 .tag { font: 500 10px var(--mono); color: var(--muted); border: 1px solid var(--line-2); border-radius: 4px; padding: 0 5px; white-space: nowrap; }

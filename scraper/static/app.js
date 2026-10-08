@@ -1,4 +1,4 @@
-/* Front end for both pages: the theme toggle and copy buttons everywhere, and the workbench on the
+/* Front end for both pages: copy buttons on the docs page, and the workbench on the
    home page, which calls GET /scrape directly and renders the result. */
 (function () {
   "use strict";
@@ -40,15 +40,6 @@
     link.click();
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
-
-  // ---- Theme: follows the system until the toggle is used, then remembers the choice ----------
-  const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
-  $("#theme-toggle")?.addEventListener("click", () => {
-    const root = document.documentElement;
-    const isDark = root.dataset.theme ? root.dataset.theme === "dark" : prefersDark.matches;
-    root.dataset.theme = isDark ? "light" : "dark";
-    store.set("theme", root.dataset.theme);
-  });
 
   // ---- Copy buttons on the docs page -------------------------------------------------------------
   $$("[data-copy-target]").forEach((button) =>
