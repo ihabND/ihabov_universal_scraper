@@ -1,8 +1,10 @@
 import os
+
 import requests
 
 API_URL = "https://ihabov-universal-scraper.fly.dev/scrape"
 API_KEY = os.environ["SCRAPER_API_KEY"]
+
 
 def scrape(url: str, mode: str = "html", browser: str = "auto") -> dict:
     response = requests.get(
@@ -16,6 +18,7 @@ def scrape(url: str, mode: str = "html", browser: str = "auto") -> dict:
         # Most errors come back as {"detail": ...}; the rate limiter answers with {"error": ...}.
         raise RuntimeError(f"{response.status_code}: {body.get('detail') or body.get('error') or body}")
     return response.json()
+
 
 data = scrape("https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava", mode="json")
 

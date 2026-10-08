@@ -19,4 +19,4 @@ COPY --from=builder /app/.venv .venv/
 RUN .venv/bin/playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
 COPY . .
-CMD ["/app/.venv/bin/uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["/app/.venv/bin/uvicorn", "scraper.app:app", "--host", "0.0.0.0", "--port", "8080"]

@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ihabov-universal-scraper"
+version = "1.0.0"
+description = "A web scraping API: any public page as clean HTML, or as structured JSON on supported sites, with a headless-browser fallback for sites that block plain requests."
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Ihab Novalic" }]
+requires-python = ">=3.12"
+# The pinned versions live in requirements.txt, which the Dockerfile installs from.
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+dev = ["ruff==0.16.10"]
+
+[tool.setuptools]
+packages = ["scraper"]
+
+[tool.setuptools.package-data]
+scraper = ["templates/*.html", "static/*"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, import order, modern syntax, likely bugs
+select = ["E", "W", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["scraper"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI declares parameters with calls in default arguments; that is its intended use.
+extend-immutable-calls = ["fastapi.Form", "fastapi.Security", "fastapi.Depends"]

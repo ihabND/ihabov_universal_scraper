@@ -6,3 +6,7 @@ __pycache__/
 .env
 mockups/
 .claude/
+docs/
+examples/
+.ruff_cache/
+dontdelete.txt

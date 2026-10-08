@@ -6,7 +6,7 @@ Every scrape needs a valid API key. Keys are handed out by hand: there is no sig
 
 - Valid keys are read from the `API_KEYS` environment variable, as a comma-separated list: `API_KEYS="key1,key2,key3"`.
 - On Fly.io, `API_KEYS` is a **secret**. It's encrypted, never in git, and passed to the app as an environment variable.
-- The check lives in `auth.py`. Keys are compared with `secrets.compare_digest`, so response timing doesn't reveal anything about a key.
+- The check lives in `scraper/auth.py`. Keys are compared with `secrets.compare_digest`, so response timing doesn't reveal anything about a key.
 - **The app fails closed:** if `API_KEYS` is empty or missing, every request is rejected with `401`.
 - The keys are loaded once when the app starts. After changing them, the app has to restart. `fly secrets set` does that automatically.
 

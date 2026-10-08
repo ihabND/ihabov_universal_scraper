@@ -139,9 +139,9 @@ logger = logging.getLogger(__name__)
 From now on, use:
 
 ```python
-logger.info("Fetching %s", url)          # normal events
-logger.warning("Blocked URL %s", url)    # suspicious but handled
-logger.exception("Unexpected error")     # inside an except block; also logs the traceback
+logger.info("Fetching %s", url)  # normal events
+logger.warning("Blocked URL %s", url)  # suspicious but handled
+logger.exception("Unexpected error")  # inside an except block; also logs the traceback
 ```
 
 > Pass values as arguments (`"Fetching %s", url`) instead of f-strings. Logging only builds the string if the message is actually going to be shown.
@@ -159,6 +159,7 @@ Add this near the top of `functions.py` (below the imports):
 ```python
 class ScrapeError(Exception):
     """Base class for all errors the scraper raises on purpose."""
+
     status_code = 502
 
 
@@ -249,11 +250,12 @@ def normalize_url(url: str) -> str | None:
 
 ```python
 from functions import normalize_url
-normalize_url("HTTPS://Example.COM/wiki/Foo:Bar#top")   # 'https://example.com/wiki/Foo:Bar'
-normalize_url("file:///etc/passwd")                     # None
-normalize_url("https://münchen.de")                     # 'https://xn--mnchen-3ya.de/'
-normalize_url("http://[::1]:8000/x")                    # 'http://[::1]:8000/x'
-normalize_url("http://example.com:abc")                 # None
+
+normalize_url("HTTPS://Example.COM/wiki/Foo:Bar#top")  # 'https://example.com/wiki/Foo:Bar'
+normalize_url("file:///etc/passwd")  # None
+normalize_url("https://münchen.de")  # 'https://xn--mnchen-3ya.de/'
+normalize_url("http://[::1]:8000/x")  # 'http://[::1]:8000/x'
+normalize_url("http://example.com:abc")  # None
 ```
 
 > Python's built-in `"idna"` codec follows the older IDNA 2003 standard. For full IDNA 2008 support you can later `pip install idna` and use `idna.encode(host).decode()`.
@@ -311,10 +313,11 @@ def validate_url(url: str) -> None:
 
 ```python
 from functions import is_public_host
-is_public_host("127.0.0.1")        # False
+
+is_public_host("127.0.0.1")  # False
 is_public_host("169.254.169.254")  # False
-is_public_host("localhost")        # False
-is_public_host("example.com")      # True
+is_public_host("localhost")  # False
+is_public_host("example.com")  # True
 ```
 
 > **Known limitation, for later: DNS rebinding.** We resolve the hostname, and then curl resolves it *again* when fetching. A malicious DNS server can return a public IP the first time and `127.0.0.1` the second time. The full fix is to pin the IP you validated (libcurl's `CURLOPT_RESOLVE` option, available as `curl_options` in curl_cffi) or to route all traffic through a filtering proxy. What you have after this step already blocks the common attacks.
@@ -342,7 +345,7 @@ from curl_cffi.requests.exceptions import RequestException
 **7b.** Add these constants near the top:
 
 ```python
-REQUEST_TIMEOUT = 10        # seconds
+REQUEST_TIMEOUT = 10  # seconds
 MAX_REDIRECTS = 5
 REDIRECT_CODES = {301, 302, 303, 307, 308}
 ```
@@ -574,7 +577,7 @@ def scrape_url(url: str, mode: Literal["text", "html"] = "text"):
     return ScrapeResponse(
         url=normalized,
         status_code=response.status_code,
-        ok=response.ok,          # True for 2xx/3xx, False for 4xx/5xx
+        ok=response.ok,  # True for 2xx/3xx, False for 4xx/5xx
         content=content,
     )
 ```
@@ -613,6 +616,7 @@ NON_CONTENT_TAGS = ["script", "style", "noscript", "template"]
 
 class ScrapeError(Exception):
     """Base class for all errors the scraper raises on purpose."""
+
     status_code = 502
 
 
@@ -884,7 +888,7 @@ def get_with_retries(url: str) -> requests.Response:
                 return response
             logger.info("Got %d from %s, retrying", response.status_code, url)
 
-        time.sleep(BACKOFF_SECONDS * 2 ** attempt)
+        time.sleep(BACKOFF_SECONDS * 2**attempt)
 ```
 
 **13d.** In `fetch_page`, replace the whole `try: ... except RequestException ...` block with one line:
@@ -994,7 +998,7 @@ from redis.exceptions import RedisError
 
 logger = logging.getLogger(__name__)
 
-CACHE_TTL_SECONDS = 300        # successful pages: 5 minutes
+CACHE_TTL_SECONDS = 300  # successful pages: 5 minutes
 FAILED_CACHE_TTL_SECONDS = 30  # pages that returned 4xx/5xx: 30 seconds
 
 REDIS_URL = os.environ.get("REDIS_URL")
@@ -1139,10 +1143,7 @@ fly secrets set PROXY_URL="http://username:password@proxy-host:port" -a ihabov-u
 ```python
 PROXY_URL = os.environ.get("PROXY_URL")
 
-proxies = {
-    "http": PROXY_URL,
-    "https": PROXY_URL
-} if PROXY_URL else None
+proxies = {"http": PROXY_URL, "https": PROXY_URL} if PROXY_URL else None
 ```
 
 The **keys** are the scheme of the *target* page: `"http"` is used for `http://` pages and `"https"` for `https://` pages. The **value** is the proxy's own address. One proxy normally handles both, which is why both keys point to the same URL. When `PROXY_URL` isn't set, `proxies` is `None` and requests go out directly, as before.
@@ -1159,6 +1160,7 @@ Every `session.get(...)`, including the retries from Step 13, now goes through t
 
 ```python
 from functions import session
+
 print(session.get("https://api.ipify.org").text)
 ```
 
@@ -1203,10 +1205,10 @@ from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
-BROWSER_TIMEOUT_MS = 20_000       # max time to load the page
-NETWORK_IDLE_TIMEOUT_MS = 5_000   # extra time for JavaScript to fetch its data
+BROWSER_TIMEOUT_MS = 20_000  # max time to load the page
+NETWORK_IDLE_TIMEOUT_MS = 5_000  # extra time for JavaScript to fetch its data
 BLOCKED_RESOURCE_TYPES = {"image", "media", "font"}  # not needed for text or HTML
-MAX_BROWSERS = 2                  # browsers are memory-hungry, cap how many run at once
+MAX_BROWSERS = 2  # browsers are memory-hungry, cap how many run at once
 
 browser_slots = threading.BoundedSemaphore(MAX_BROWSERS)
 ```
@@ -1219,6 +1221,7 @@ A **semaphore** is a counter of free slots. `acquire()` takes a slot and waits i
 @dataclass
 class BrowserResponse:
     """Has the same fields as a curl_cffi Response, so the rest of the code can use either."""
+
     status_code: int
     content: bytes
 
@@ -1259,8 +1262,7 @@ def is_allowed_browser_request(url: str) -> bool:
 
 def handle_browser_route(route) -> None:
     request = route.request
-    if (request.resource_type in BLOCKED_RESOURCE_TYPES
-            or not is_allowed_browser_request(request.url)):
+    if request.resource_type in BLOCKED_RESOURCE_TYPES or not is_allowed_browser_request(request.url):
         route.abort()
     else:
         route.continue_()
@@ -1281,14 +1283,12 @@ def fetch_with_browser(url: str) -> BrowserResponse:
                 page = context.new_page()
                 page.route("**/*", handle_browser_route)
 
-                response = page.goto(url, wait_until="domcontentloaded",
-                                     timeout=BROWSER_TIMEOUT_MS)
+                response = page.goto(url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT_MS)
                 if response is None:
                     raise FetchError("The browser got no response.")
                 try:
                     # Give JavaScript a few seconds to fetch and draw the content.
-                    page.wait_for_load_state("networkidle",
-                                             timeout=NETWORK_IDLE_TIMEOUT_MS)
+                    page.wait_for_load_state("networkidle", timeout=NETWORK_IDLE_TIMEOUT_MS)
                 except PlaywrightTimeoutError:
                     pass  # some pages never go idle (ads, live updates), use what we have
 
@@ -1331,7 +1331,7 @@ What each part does:
 from functions import fetch_page, fetch_with_browser, clean_html_response
 
 url = "https://quotes.toscrape.com/js/"
-print(clean_html_response(fetch_page(url), "text")[:5])          # no quotes
+print(clean_html_response(fetch_page(url), "text")[:5])  # no quotes
 print(clean_html_response(fetch_with_browser(url), "text")[:5])  # quotes!
 ```
 
@@ -1377,8 +1377,7 @@ def fetch_page_with_fallback(url: str) -> requests.Response | BrowserResponse:
     if not needs_browser(response):
         return response
 
-    logger.info("Got %d or too little text from %s, trying the browser",
-                response.status_code, url)
+    logger.info("Got %d or too little text from %s, trying the browser", response.status_code, url)
     try:
         return fetch_with_browser(url)
     except ScrapeError as e:
@@ -1659,11 +1658,9 @@ In the retry helper, replace `time.sleep(...)` with `await asyncio.sleep(...)`. 
 **21c.** Make the endpoints and `scrape()` `async`:
 
 ```python
-@app.get("/scrape", response_model=ScrapeResponse,
-         dependencies=[Depends(require_api_key)])
+@app.get("/scrape", response_model=ScrapeResponse, dependencies=[Depends(require_api_key)])
 @limiter.limit("10/minute")
-async def scrape_url(request: Request, url: str,
-                     mode: Literal["text", "html"] = "text", js: bool = False):
+async def scrape_url(request: Request, url: str, mode: Literal["text", "html"] = "text", js: bool = False):
     ...
     response = await fetch_page_with_fallback(request.app.state.http, normalized, js)
     # Parsing HTML is CPU work, so run it in a thread so it doesn't block other requests
@@ -1758,8 +1755,8 @@ def test_normalize_url_valid(raw, expected):
         "file:///etc/passwd",
         "ftp://example.com",
         "gopher://example.com",
-        "example.com",           # no scheme
-        "https://",              # no host
+        "example.com",  # no scheme
+        "https://",  # no host
         "http://example.com:abc",  # bad port
     ],
 )
@@ -1804,10 +1801,10 @@ def test_clean_html_html_mode_returns_markup():
 
 def test_needs_browser():
     long_text = "<p>" + "word " * 50 + "</p>"
-    assert needs_browser(FakeResponse(long_text, status_code=403))    # bot check
-    assert needs_browser(FakeResponse('<div id="root"></div>'))         # JS shell
-    assert not needs_browser(FakeResponse(long_text))                   # normal page
-    assert not needs_browser(FakeResponse("<p>Not found</p>", 404))     # really missing
+    assert needs_browser(FakeResponse(long_text, status_code=403))  # bot check
+    assert needs_browser(FakeResponse('<div id="root"></div>'))  # JS shell
+    assert not needs_browser(FakeResponse(long_text))  # normal page
+    assert not needs_browser(FakeResponse("<p>Not found</p>", 404))  # really missing
 ```
 
 **22d.** Create `tests/test_api.py`. It tests the endpoint **without** hitting the internet (or starting a browser) by replacing `fetch_page_with_fallback` with a fake:
@@ -1841,8 +1838,7 @@ def test_private_ip_returns_403():
 def test_successful_scrape(monkeypatch):
     # main.py did `from functions import fetch_page_with_fallback`,
     # so we patch the name inside main
-    monkeypatch.setattr(main, "fetch_page_with_fallback",
-                        lambda url, use_js=False: FakeResponse("<p>Hello</p>"))
+    monkeypatch.setattr(main, "fetch_page_with_fallback", lambda url, use_js=False: FakeResponse("<p>Hello</p>"))
 
     response = client.get("/scrape", params={"url": "https://example.com"}, headers=HEADERS)
 
@@ -1867,8 +1863,7 @@ def test_js_flag_is_passed_through(monkeypatch):
 
 
 def test_invalid_mode_returns_422():
-    response = client.get("/scrape", params={"url": "https://example.com", "mode": "banana"},
-                          headers=HEADERS)
+    response = client.get("/scrape", params={"url": "https://example.com", "mode": "banana"}, headers=HEADERS)
     assert response.status_code == 422
 ```
 

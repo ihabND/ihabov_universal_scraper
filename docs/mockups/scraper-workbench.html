@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scraper Workbench</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: centered hero with the URL bar as the single call to action, then a wide result card,
+     then two quiet sections (supported sites, recent). One green accent, lots of air, soft cards. */
+  :root {
+    --bg: #ffffff; --bg-2: #f5f7f9; --surface: #ffffff; --line: #e4e8ee; --line-2: #d3d9e2;
+    --fg: #0b1220; --muted: #5f6b7c; --accent: #15b77a; --accent-fg: #052e1f; --accent-soft: #e4f7ee; --glow: rgba(21,183,122,.14);
+    --good: #15803d; --warn: #b45309; --bad: #dc2626; --code-bg: #f6f8fa; --shadow: 0 10px 30px rgba(11,18,32,.07), 0 1px 2px rgba(11,18,32,.05);
+    --font-ui: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0b0f16; --bg-2: #0f141d; --surface: #121823; --line: #1f2733; --line-2: #2b3545;
+      --fg: #e7ebf1; --muted: #8e99ab; --accent: #3ddc97; --accent-fg: #06241a; --accent-soft: #10291f; --glow: rgba(61,220,151,.12);
+      --good: #4ade80; --warn: #fbbf24; --bad: #f87171; --code-bg: #0e131b; --shadow: 0 10px 30px rgba(0,0,0,.35), 0 1px 2px rgba(0,0,0,.4); color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0b0f16; --bg-2: #0f141d; --surface: #121823; --line: #1f2733; --line-2: #2b3545;
+    --fg: #e7ebf1; --muted: #8e99ab; --accent: #3ddc97; --accent-fg: #06241a; --accent-soft: #10291f; --glow: rgba(61,220,151,.12);
+    --good: #4ade80; --warn: #fbbf24; --bad: #f87171; --code-bg: #0e131b; --shadow: 0 10px 30px rgba(0,0,0,.35), 0 1px 2px rgba(0,0,0,.4); color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 15px; line-height: 1.55; margin: 0; -webkit-font-smoothing: antialiased; }
+  a { color: inherit; text-decoration: none; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  input { font: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  h1, h2, h3 { margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+  .mono { font-family: var(--font-mono); }
+  .muted { color: var(--muted); }
+  .eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); }
+
+  /* Header */
+  .top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  .top .in { max-width: 1120px; margin: 0 auto; padding-inline: 20px; height: 60px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .wordmark { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: -0.02em; font-size: 16px; }
+  .wordmark .mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; color: var(--accent-fg); }
+  .wordmark .mark svg { width: 16px; height: 16px; }
+  .top nav { display: flex; align-items: center; gap: 4px; }
+  .navlink { padding: 8px 12px; border-radius: 999px; color: var(--muted); font-weight: 600; font-size: 14px; }
+  .navlink:hover { color: var(--fg); background: var(--bg-2); }
+  .navcta { padding: 8px 14px; border-radius: 999px; border: 1px solid var(--line-2); font-weight: 600; font-size: 14px; }
+  .navcta:hover { border-color: var(--fg); }
+
+  .page { max-width: 1120px; margin: 0 auto; padding-inline: 20px; padding-block: 0 72px; }
+
+  /* Hero */
+  .hero { position: relative; text-align: center; padding-block: 64px 36px; display: grid; gap: 18px; justify-items: center; }
+  .hero::before { content: ""; position: absolute; inset: -40px 0 auto; height: 360px; background: radial-gradient(60% 70% at 50% 0%, var(--glow), transparent 70%); pointer-events: none; z-index: -1; }
+  .hero h1 { font-size: clamp(32px, 5vw, 52px); font-weight: 800; line-height: 1.08; letter-spacing: -0.03em; max-width: 14ch; }
+  .hero h1 em { font-style: normal; color: var(--accent); }
+  .hero p { margin: 0; max-width: 56ch; color: var(--muted); font-size: 17px; }
+  .notice { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; background: var(--surface); }
+  .notice i { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); }
+
+  /* URL bar */
+  .bar { display: grid; gap: 14px; }
+  .urlrow { display: flex; align-items: stretch; border: 1px solid var(--line-2); border-radius: 999px; background: var(--surface); box-shadow: var(--shadow); padding: 6px 6px 6px 8px; transition: box-shadow .15s, border-color .15s; }
+  .urlrow:focus-within { border-color: var(--accent); box-shadow: var(--shadow), 0 0 0 4px var(--accent-soft); }
+  .urlrow .lead { display: grid; place-items: center; width: 40px; color: var(--muted); flex: none; }
+  .urlrow .lead svg { width: 18px; height: 18px; }
+  .urlrow input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--fg); padding: 10px 6px; font-family: var(--font-mono); font-size: 15px; }
+  .urlrow input::placeholder { color: var(--muted); font-family: var(--font-ui); }
+  .urlrow input:focus { outline: none; }
+  .primary { background: var(--accent); color: var(--accent-fg); border: 0; border-radius: 999px; padding: 0 24px; font-weight: 700; font-size: 15px; display: inline-flex; align-items: center; gap: 8px; }
+  .primary:hover { filter: brightness(1.06); }
+  .primary[disabled] { opacity: .65; cursor: progress; }
+  .primary svg { width: 16px; height: 16px; }
+
+  .options { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center; justify-content: center; }
+  .seg { display: inline-flex; align-items: center; gap: 2px; border: 1px solid var(--line); border-radius: 999px; padding: 3px; background: var(--surface); }
+  .seg .label { padding: 0 8px 0 10px; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+  .seg button { border: 0; background: transparent; padding: 6px 12px; border-radius: 999px; color: var(--muted); font-weight: 600; font-size: 14px; }
+  .seg button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
+  .keyfield { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 999px; padding: 3px 3px 3px 12px; background: var(--surface); }
+  .keyfield .label { font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  .keyfield input { width: 150px; border: 0; background: transparent; color: var(--fg); font-family: var(--font-mono); font-size: 13px; padding: 6px 4px; min-width: 0; }
+  .keyfield input:focus { outline: none; }
+  .keyfield .state { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--muted); padding: 0 10px; white-space: nowrap; }
+  .keyfield .state i { width: 7px; height: 7px; border-radius: 50%; background: var(--line-2); }
+  .keyfield.set .state i { background: var(--accent); }
+  .hint { width: 100%; text-align: center; font-size: 13px; color: var(--muted); }
+
+  /* Result card */
+  .result { margin-top: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow); min-width: 0; overflow: hidden; }
+  .strip { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  .strip .final { font-family: var(--font-mono); font-size: 13px; color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1 1 220px; }
+  .strip .num { font-family: var(--font-mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; font-weight: 500; padding: 3px 10px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--line); white-space: nowrap; }
+  .chip.code::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .chip.code.ok::before { background: var(--good); }
+  .chip.code.warn::before { background: var(--warn); }
+  .chip.code.bad::before { background: var(--bad); }
+  .chip svg { width: 13px; height: 13px; }
+  .tabs { display: flex; align-items: center; gap: 4px; padding: 10px 14px 0; border-bottom: 1px solid var(--line); }
+  .tabs button { border: 0; background: transparent; padding: 8px 12px; color: var(--muted); font-weight: 600; font-size: 14px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); }
+  .tabs .spacer { flex: 1; }
+  .tool { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 5px 12px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .tool:hover { color: var(--fg); border-color: var(--line-2); }
+  .tool[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+  .body { padding: 20px; min-height: 320px; }
+  pre.code { margin: 0; background: var(--code-bg); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; overflow: auto; max-height: 70vh; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.6; }
+  pre.code.lines { counter-reset: ln; }
+  pre.code.lines .ln::before { counter-increment: ln; content: counter(ln); display: inline-block; width: 3ch; margin-right: 16px; text-align: right; color: var(--muted); user-select: none; }
+  .tag { color: var(--accent); }
+  .attr { color: var(--warn); }
+
+  /* JSON tree */
+  .tree { font-family: var(--font-mono); font-size: 12.5px; line-height: 1.65; background: var(--code-bg); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; overflow: auto; max-height: 70vh; }
+  .tree details details { padding-left: 18px; }
+  .tree summary { cursor: pointer; list-style: none; }
+  .tree summary::-webkit-details-marker { display: none; }
+  .tree summary::before { content: "▸"; display: inline-block; width: 14px; color: var(--muted); transition: transform .12s; }
+  .tree details[open] > summary::before { transform: rotate(90deg); }
+  .tree .leaf { padding-left: 32px; }
+  .tree .k { color: var(--fg); font-weight: 500; }
+  .tree .s { color: var(--good); }
+  .tree .n { color: var(--accent); }
+  .tree .b { color: var(--warn); }
+  .tree .z { color: var(--muted); font-style: italic; }
+  .tree .count { color: var(--muted); font-size: 11px; margin-left: 6px; }
+
+  .preview { border: 1px solid var(--line); border-radius: 12px; background: #fff; color: #222; padding: 28px; max-height: 70vh; overflow: auto; font-family: Georgia, serif; }
+  .preview h1 { font-size: 22px; margin-bottom: 8px; letter-spacing: 0; }
+  .preview p { margin: 0 0 10px; }
+  .preview a { color: #38488f; }
+
+  /* Progress */
+  .progress { display: grid; gap: 16px; padding: 28px 8px; max-width: 520px; }
+  .progress .head { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 700; }
+  .progress .elapsed { font-family: var(--font-mono); font-weight: 400; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .steps { display: grid; gap: 10px; }
+  .step { display: flex; align-items: center; gap: 12px; color: var(--muted); }
+  .step .ico { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--line-2); flex: none; }
+  .step.active { color: var(--fg); font-weight: 600; }
+  .step.active .ico { border-color: var(--accent); border-top-color: transparent; animation: spin .9s linear infinite; }
+  .step.done .ico { border-color: var(--accent); background: var(--accent); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .step.active .ico { animation: none; border-top-color: var(--accent); } .tree summary::before { transition: none; } }
+
+  /* Error card */
+  .error { max-width: 640px; display: grid; gap: 12px; padding: 8px; }
+  .error .head { display: flex; align-items: center; gap: 12px; }
+  .error h3 { font-size: 18px; font-weight: 700; }
+  .error .code { font-family: var(--font-mono); font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--bad); color: #fff; font-size: 13px; }
+  .error .code.warn { background: var(--warn); }
+  .error p { margin: 0; color: var(--muted); }
+  .error .next { display: grid; gap: 8px; padding: 14px 16px; background: var(--bg-2); border-radius: 12px; justify-items: start; }
+  .error .next .eyebrow { color: var(--muted); }
+
+  .snip { border-top: 1px solid var(--line); }
+  .snip summary { cursor: pointer; padding: 14px 20px; font-weight: 600; color: var(--muted); list-style: none; display: flex; align-items: center; gap: 8px; }
+  .snip summary::-webkit-details-marker { display: none; }
+  .snip summary::before { content: "▸"; color: var(--muted); transition: transform .12s; }
+  .snip[open] summary::before { transform: rotate(90deg); }
+  .snip summary:hover { color: var(--fg); }
+  .snip .inner { padding: 0 20px 20px; display: grid; gap: 12px; }
+  .snip .pick { display: flex; gap: 6px; flex-wrap: wrap; }
+
+  .empty { padding: 40px 8px; color: var(--muted); max-width: 520px; display: grid; gap: 6px; }
+
+  /* Lower sections */
+  .sections { margin-top: 56px; display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 40px; align-items: start; }
+  .section h2 { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; margin-top: 6px; }
+  .section .sub { margin: 6px 0 18px; color: var(--muted); }
+  .sites { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .site { display: grid; gap: 4px; text-align: left; padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); transition: transform .12s, border-color .12s, box-shadow .12s; }
+  .site:hover { transform: translateY(-1px); border-color: var(--line-2); box-shadow: var(--shadow); }
+  .site .host { font-family: var(--font-mono); font-size: 13px; font-weight: 500; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .site .shape { font-family: var(--font-ui); font-size: 11px; font-weight: 700; color: var(--accent); background: var(--accent-soft); border-radius: 999px; padding: 2px 8px; }
+  .site .what { font-size: 13px; color: var(--muted); }
+  .recent { display: grid; gap: 2px; }
+  .recent button { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; text-align: left; width: 100%; border: 0; background: transparent; padding: 9px 10px; border-radius: 10px; }
+  .recent button:hover { background: var(--bg-2); }
+  .recent .url { font-family: var(--font-mono); font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .recent .when { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .errdemo { margin-top: 22px; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: var(--muted); }
+  .errdemo button { border: 0; background: transparent; padding: 0; color: var(--muted); text-decoration: underline; text-underline-offset: 3px; font-size: 13px; }
+  .errdemo button:hover { color: var(--fg); }
+
+  @media (max-width: 860px) {
+    .sections { grid-template-columns: 1fr; gap: 36px; }
+    .sites { grid-template-columns: 1fr; }
+    .hero { padding-block: 40px 28px; }
+    .urlrow { border-radius: 20px; flex-wrap: wrap; padding: 8px; }
+    .urlrow .lead { display: none; }
+    .urlrow input { flex: 1 1 100%; padding: 8px 8px 10px; }
+    .primary { width: 100%; justify-content: center; padding-block: 12px; }
+    .keyfield { width: 100%; }
+    .keyfield input { flex: 1; width: auto; }
+    .top .in { height: 54px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="in">
+    <a class="wordmark" href="#top">
+      <span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h14M5 12h14M5 16h8"/></svg></span>
+      Ihabov Scraper
+    </a>
+    <nav>
+      <a class="navlink" href="#sites">Supported sites</a>
+      <a class="navlink" href="#docs">Docs</a>
+      <a class="navcta" href="#docs">API reference</a>
+    </nav>
+  </div>
+</header>
+
+<div class="page" id="top">
+  <section class="hero">
+    <span class="notice"><i></i>Mock-up with sample data. Nothing is fetched from this page.</span>
+    <h1>Any public page, as clean <em>HTML</em> or structured <em>JSON</em>.</h1>
+    <p>Paste a URL. The scraper fetches it with a real browser fingerprint, follows redirects safely, and switches to a headless browser only when a site blocks the plain request.</p>
+  </section>
+
+  <section class="bar" aria-label="Scrape a page">
+    <form class="urlrow" id="form">
+      <span class="lead" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>
+      <input id="url" type="text" inputmode="url" spellcheck="false" placeholder="https://example.com/page" value="https://scrapeme.live/shop/Bulbasaur/" aria-label="Page URL">
+      <button class="primary" id="go" type="submit">Scrape <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    </form>
+    <div class="options">
+      <div class="seg" role="group" aria-label="Mode"><span class="label">Mode</span>
+        <button type="button" data-mode="html" aria-pressed="false">HTML</button>
+        <button type="button" data-mode="json" aria-pressed="true">JSON</button>
+      </div>
+      <div class="seg" role="group" aria-label="Browser"><span class="label">Browser</span>
+        <button type="button" data-browser="auto" aria-pressed="true">Auto</button>
+        <button type="button" data-browser="never" aria-pressed="false">Never</button>
+        <button type="button" data-browser="always" aria-pressed="false">Always</button>
+      </div>
+      <label class="keyfield" id="keyfield">
+        <span class="label">API key</span>
+        <input id="key" type="password" autocomplete="off" placeholder="paste your key">
+        <span class="state"><i></i><span id="keystate">not set</span></span>
+      </label>
+      <span class="hint" id="hint">JSON works on the supported sites below. Auto uses the browser only when a site blocks the plain fetch. The key stays in this browser.</span>
+    </div>
+  </section>
+
+  <section class="result" aria-live="polite">
+    <div class="strip" id="strip"></div>
+    <div class="tabs" id="tabs" hidden></div>
+    <div class="body" id="body"></div>
+    <details class="snip" id="snip">
+      <summary>Use this request from code</summary>
+      <div class="inner">
+        <div class="pick" role="group" aria-label="Language">
+          <button class="tool" data-lang="curl" aria-pressed="true">curl</button>
+          <button class="tool" data-lang="python" aria-pressed="false">Python</button>
+          <button class="tool" data-lang="js" aria-pressed="false">JavaScript</button>
+          <span style="flex:1"></span>
+          <button class="tool" id="copysnip">Copy</button>
+        </div>
+        <pre class="code" id="snipcode"></pre>
+      </div>
+    </details>
+  </section>
+
+  <div class="sections">
+    <section class="section" id="sites">
+      <span class="eyebrow">JSON mode</span>
+      <h2>Supported sites</h2>
+      <p class="sub">These pages come back as structured data instead of HTML. Click one to try its example.</p>
+      <div class="sites" id="sitelist"></div>
+    </section>
+    <section class="section">
+      <span class="eyebrow">This browser</span>
+      <h2>Recent</h2>
+      <p class="sub">Your last scrapes, kept locally. Click to run again.</p>
+      <div class="recent" id="recent"></div>
+      <div class="errdemo">Error states for review:
+        <button type="button" data-err="unsupported">400 unsupported</button>
+        <button type="button" data-err="blocked">502 blocked</button>
+        <button type="button" data-err="busy">503 busy</button>
+        <button type="button" data-err="ratelimit">429 limit</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  const $ = (s, r = document) => r.querySelector(s);
+  const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  // ---- Sample content (shapes and values from the real parsers) ----
+  const SITES = [
+    { host: "scrapeme.live", what: "Product page", shape: "object", ex: "https://scrapeme.live/shop/Bulbasaur/" },
+    { host: "books.toscrape.com", what: "Listing page or one book", shape: "list / object", ex: "https://books.toscrape.com/catalogue/page-2.html" },
+    { host: "quotes.toscrape.com", what: "Home, /page/N/ or a tag", shape: "list", ex: "https://quotes.toscrape.com/page/2/" },
+    { host: "webscraper.io", what: "Car page under /test-sites/product/", shape: "object", ex: "https://webscraper.io/test-sites/product/bmw-e24-635csi-1954-c002" },
+    { host: "knjizare-vulkan.rs", what: "Book product page", shape: "object", ex: "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava" },
+    { host: "iponcomp.com", what: "Shop product page", shape: "object", ex: "https://iponcomp.com/shop/product/valueline-usb-32-gen-1-hub-4-ports-type-c-connection-cable/1871163" },
+    { host: "allrecipes.com", what: "Recipe page", shape: "object", ex: "https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies/" },
+    { host: "imdb.com", what: "Title page, needs the browser", shape: "object", ex: "https://www.imdb.com/title/tt0111161/" },
+  ];
+
+  const SAMPLES = {
+    "scrapeme.live": { status: 200, via: "http", bytes: 44810, ms: 2900, json: {
+      name: "Bulbasaur", price: 63.0,
+      description: "Bulbasaur can be seen napping in bright sunlight. There is a seed on its back. By soaking up the sun's rays, the seed grows progressively larger.",
+      sku: "4391", categories: ["Pokemon", "Seed"], tags: ["bulbasaur", "Overgrow", "Seed"], stock: 45 } },
+    "books.toscrape.com": { status: 200, via: "http", bytes: 51230, ms: 1700, json: [
+      { title: "In Her Wake", price: 12.84, stock: "In stock", rating: 1, url: "https://books.toscrape.com/catalogue/in-her-wake_980/index.html" },
+      { title: "How Music Works", price: 37.32, stock: "In stock", rating: 2, url: "https://books.toscrape.com/catalogue/how-music-works_979/index.html" },
+      { title: "Foolproof Preserving", price: 30.52, stock: "In stock", rating: 3, url: "https://books.toscrape.com/catalogue/foolproof-preserving_978/index.html" } ] },
+    "quotes.toscrape.com": { status: 200, via: "http", bytes: 11013, ms: 800, json: [
+      { quote: "The world as we have created it is a process of our thinking. It cannot be changed without changing our thinking.", author: "Albert Einstein", tags: ["change", "deep-thoughts", "thinking", "world"] },
+      { quote: "It is our choices, Harry, that show what we truly are, far more than our abilities.", author: "J.K. Rowling", tags: ["abilities", "choices"] } ] },
+    "webscraper.io": { status: 200, via: "http", bytes: 38420, ms: 1200, json: {
+      brand: "BMW", model: "E24 635CSi", year: 1954, engine: "3.5L I6", drivetrain: "RWD", power_hp: 218, country: "Germany", mileage_km: 189000,
+      condition: "Used", exterior_color: "Blue", interior_color: "Black", body: "Coupe", price_eur: 19000, availability: "In stock", rating: 4,
+      seller: "Classic Motors", transmission: ["Manual", "Automatic"], tags: ["classic", "coupe"], colors: ["blue", "black", "silver"],
+      image: "https://webscraper.io/images/test-sites/product/bmw-e24-635csi.jpg" } },
+    "knjizare-vulkan.rs": { status: 200, via: "browser", bytes: 212004, ms: 54100, json: {
+      name: "TVRĐAVA", publisher: "VULKAN IZDAVAŠTVO", price: 799.2, currency: "RSD", isbn: "9788610023732", sku: "25486", product_id: "25486",
+      description: "Roman Meše Selimovića o Ahmetu Šabi, pisaru koji se vraća iz rata u Sarajevo.", image: "https://www.knjizare-vulkan.rs/files/images/tvrdjava.jpg",
+      url: "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava" } },
+    "iponcomp.com": { status: 200, via: "http", bytes: 97310, ms: 2500, json: {
+      name: "VALUELINE USB 3.2 Gen 1 Hub 4 Ports Type C Connection Cable", brand: "VALUELINE", price: 15490.0, currency: "HUF", availability: "InStock",
+      shipping_price: 1490, category: "USB hubs", sku: "1871163", mpn: "VLCRP6440", ean: "5412810275342", description: "4-port USB 3.2 Gen 1 hub with a USB-C cable.",
+      image: "https://iponcomp.com/images/1871163.jpg", url: "https://iponcomp.com/shop/product/valueline-usb-32-gen-1-hub-4-ports-type-c-connection-cable/1871163" } },
+    "allrecipes.com": { status: 200, via: "http", bytes: 301998, ms: 1000, json: {
+      name: "Best Chocolate Chip Cookies", description: "This classic chocolate chip cookie recipe makes deliciously buttery cookies with crisp edges, chewy middles, and gooey chocolate chips in every bite.",
+      author: ["Dora"], rating: 4.6, rating_count: 18977, prep_minutes: 20, cook_minutes: 10, total_minutes: 60, yield: "48 cookies", categories: ["Dessert"], cuisine: ["American"],
+      ingredients: ["1 cup butter, softened", "1 cup white sugar", "1 cup packed brown sugar", "2 eggs", "2 teaspoons vanilla extract", "3 cups all-purpose flour", "1 teaspoon baking soda", "2 teaspoons hot water", "1/2 teaspoon salt", "2 cups semisweet chocolate chips", "1 cup chopped walnuts"],
+      instructions: ["Preheat the oven to 350 degrees F (175 degrees C).", "Beat butter, white sugar, and brown sugar until smooth.", "Bake for about 10 minutes, or until edges are nicely browned."],
+      nutrition: { calories: "298", fatContent: "16g", carbohydrateContent: "38g", proteinContent: "3g" },
+      image: "https://www.allrecipes.com/thmb/best-chocolate-chip-cookies.jpg", date_published: "1998-04-18" } },
+    "imdb.com": { status: 200, via: "browser", bytes: 1705565, ms: 12800, json: {
+      title: "The Shawshank Redemption", alternate_title: null, type: "Movie", year: 1994, date_published: "1994-10-14", content_rating: "R", genres: ["Drama"],
+      rating: 9.3, rating_count: 3045000, runtime_minutes: 142, directors: ["Frank Darabont"], writers: ["Stephen King", "Frank Darabont"],
+      actors: ["Tim Robbins", "Morgan Freeman", "Bob Gunton"], keywords: ["prison", "wrongful conviction", "friendship"],
+      description: "A banker convicted of uxoricide forms a friendship over a quarter century with a hardened convict, while maintaining his innocence and trying to remain hopeful through simple compassion.",
+      poster: "https://m.media-amazon.com/images/M/MV5BMDAyY2FhYjctNDc5OS00MDNlLThiMGUtY2UxYWVkNGY2ZjljXkEyXkFqcGc@._V1_.jpg",
+      trailer: "https://www.imdb.com/video/vi3877612057/", url: "https://www.imdb.com/title/tt0111161/" } },
+  };
+
+  const EXAMPLE_HTML = [
+    '<!DOCTYPE html>', '<html lang="en">', ' <head>', '  <title>', '   Example Domain', '  </title>',
+    '  <meta charset="utf-8"/>', '  <meta content="width=device-width, initial-scale=1" name="viewport"/>', ' </head>', ' <body>', '  <div>',
+    '   <h1>', '    Example Domain', '   </h1>', '   <p>',
+    '    This domain is for use in illustrative examples in documents. You may use this domain in literature without prior coordination or asking for permission.',
+    '   </p>', '   <p>', '    <a href="https://www.iana.org/domains/example">', '     More information...', '    </a>', '   </p>', '  </div>', ' </body>', '</html>'
+  ];
+
+  const RECENT = [
+    { url: "https://www.imdb.com/title/tt0111161/", mode: "json", browser: "auto", status: 200, via: "browser", when: "2 min ago" },
+    { url: "https://example.com/", mode: "html", browser: "auto", status: 200, via: "http", when: "14 min ago" },
+    { url: "https://books.toscrape.com/catalogue/nope_1/index.html", mode: "json", browser: "auto", status: 502, via: "http", when: "1 h ago" },
+    { url: "https://quotes.toscrape.com/page/2/", mode: "json", browser: "never", status: 200, via: "http", when: "yesterday" },
+  ];
+
+  const state = { mode: "json", browser: "auto", lang: "curl", key: "" };
+
+  // ---- API key field (inline, saved on change) ----
+  const keyEl = $("#key"), keyfield = $("#keyfield");
+  try { state.key = localStorage.getItem("scraper-mock-key") || ""; } catch (e) {}
+  keyEl.value = state.key;
+  function paintKey() { keyfield.classList.toggle("set", !!state.key); $("#keystate").textContent = state.key ? "saved" : "not set"; }
+  keyEl.addEventListener("input", () => { state.key = keyEl.value.trim(); try { state.key ? localStorage.setItem("scraper-mock-key", state.key) : localStorage.removeItem("scraper-mock-key"); } catch (e) {} paintKey(); renderSnippet(); });
+  paintKey();
+
+  // ---- Segmented controls ----
+  $$("[data-mode]").forEach(b => b.addEventListener("click", () => setSeg("mode", b.dataset.mode)));
+  $$("[data-browser]").forEach(b => b.addEventListener("click", () => setSeg("browser", b.dataset.browser)));
+  function setSeg(kind, value) {
+    state[kind] = value;
+    $$("[data-" + kind + "]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset[kind] === value)));
+    $("#hint").textContent = state.browser === "always"
+      ? "Always goes straight to the headless browser. Slower: a few seconds per page. The key stays in this browser."
+      : state.mode === "json" ? "JSON works on the supported sites below. Auto uses the browser only when a site blocks the plain fetch. The key stays in this browser."
+      : "HTML returns the page's formatted source. Auto uses the browser only when a site blocks the plain fetch. The key stays in this browser.";
+    renderSnippet();
+  }
+
+  // ---- Sites and recent ----
+  const sitesEl = $("#sitelist");
+  SITES.forEach(s => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "site";
+    b.innerHTML = '<span class="host">' + esc(s.host) + '<span class="shape">' + esc(s.shape) + '</span></span><span class="what">' + esc(s.what) + '</span>';
+    b.addEventListener("click", () => { $("#url").value = s.ex; setSeg("mode", "json"); run(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+    sitesEl.appendChild(b);
+  });
+  function renderRecent() {
+    const el = $("#recent"); el.innerHTML = "";
+    RECENT.slice(0, 6).forEach(r => {
+      const b = document.createElement("button"); b.type = "button";
+      const cls = r.status < 300 ? "ok" : r.status < 500 ? "warn" : "bad";
+      b.innerHTML = '<span class="chip code ' + cls + '">' + r.status + '</span><span class="url" title="' + esc(r.url) + '">' + esc(r.url.replace(/^https?:\/\/(www\.)?/, "")) + '</span><span class="when">' + esc(r.when) + '</span>';
+      b.addEventListener("click", () => { $("#url").value = r.url; setSeg("mode", r.mode); setSeg("browser", r.browser); run(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+      el.appendChild(b);
+    });
+  }
+  renderRecent();
+  $$("[data-err]").forEach(b => b.addEventListener("click", () => { showError(b.dataset.err); window.scrollTo({ top: 0, behavior: "smooth" }); }));
+
+  // ---- Helpers ----
+  const hostOf = url => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch (e) { return ""; } };
+  const kb = n => n >= 1048576 ? (n / 1048576).toFixed(1) + " MB" : (n / 1024).toFixed(1) + " KB";
+  const secs = ms => (ms / 1000).toFixed(1) + " s";
+  const viaIcon = via => via === "browser"
+    ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18"/></svg>browser'
+    : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 12h16M4 6h16M4 18h16"/></svg>http';
+  function strip(parts) { $("#strip").innerHTML = parts; }
+  function statusChip(code) { const cls = code < 300 ? "ok" : code < 500 ? "warn" : "bad"; return '<span class="chip code ' + cls + '">' + code + '</span>'; }
+
+  // ---- Progress ----
+  let timer = null;
+  function run() {
+    const url = $("#url").value.trim();
+    if (!/^https?:\/\//i.test(url)) { showError("badurl"); return; }
+    const host = hostOf(url);
+    const known = SAMPLES[host];
+    if (state.mode === "json" && !known && host !== "example.com") { showError("unsupported"); return; }
+    if (host === "imdb.com" && state.browser === "never") { showError("blocked"); return; }
+
+    const needsBrowser = state.browser === "always" || (known && known.via === "browser" && state.browser === "auto");
+    const steps = state.browser === "always"
+      ? ["Opening the page in the headless browser", "Waiting for scripts to finish", "Parsing"]
+      : needsBrowser ? ["Fetching over HTTP", "Looks blocked (403), switching to the browser", "Waiting for the bot check", "Parsing"]
+      : ["Fetching over HTTP", "Parsing"];
+
+    $("#go").disabled = true; $("#tabs").hidden = true;
+    strip('<span class="chip">' + esc(state.mode.toUpperCase()) + '</span><span class="final">' + esc(url) + '</span>');
+    const body = $("#body");
+    body.innerHTML = '<div class="progress"><div class="head"><span>Scraping…</span><span class="elapsed" id="elapsed">0.0 s</span></div><div class="steps" id="steps">'
+      + steps.map(s => '<div class="step"><span class="ico"></span><span>' + esc(s) + '</span></div>').join("")
+      + '</div><button class="tool" id="cancel" style="justify-self:start">Cancel</button></div>';
+    const t0 = performance.now();
+    const stepEls = $$(".step", body);
+    let i = 0; stepEls[0].classList.add("active");
+    clearInterval(timer);
+    timer = setInterval(() => {
+      const t = performance.now() - t0;
+      $("#elapsed").textContent = secs(t);
+      const want = Math.min(steps.length - 1, Math.floor(t / 700));
+      while (i < want) { stepEls[i].classList.replace("active", "done"); i++; stepEls[i].classList.add("active"); }
+      if (t > 700 * steps.length) { clearInterval(timer); finish(url, host, known, needsBrowser); }
+    }, 100);
+    $("#cancel").addEventListener("click", () => { clearInterval(timer); $("#go").disabled = false; empty("Cancelled. The request itself keeps running on the server until it finishes; nothing is cached from it."); });
+  }
+
+  function finish(url, host, known, needsBrowser) {
+    $("#go").disabled = false;
+    const via = needsBrowser ? "browser" : "http";
+    const r = known ? known : { status: 200, via, bytes: 1256, ms: 640 };
+    RECENT.unshift({ url, mode: state.mode, browser: state.browser, status: r.status, via, when: "just now" }); renderRecent();
+    strip(statusChip(r.status) + '<span class="chip">' + viaIcon(via) + '</span><span class="final" title="' + esc(url) + '">' + esc(url) + '</span>'
+      + '<span class="num">' + kb(r.bytes) + '</span><span class="num">' + secs(r.ms) + '</span>');
+    if (state.mode === "json" && known) renderJSON(known.json); else renderHTML(host);
+    renderSnippet();
+  }
+
+  // ---- Renderers ----
+  function renderJSON(data) {
+    const tabs = $("#tabs"); tabs.hidden = false;
+    tabs.innerHTML = '<button aria-selected="true">Parsed</button><button aria-selected="false" data-raw>Raw JSON</button><span class="spacer"></span><button class="tool" id="expand">Collapse all</button><button class="tool" id="copy">Copy JSON</button>';
+    const body = $("#body");
+    const tree = document.createElement("div"); tree.className = "tree";
+    tree.appendChild(node(null, data, true));
+    body.innerHTML = ""; body.appendChild(tree);
+    const raw = '<pre class="code">' + esc(JSON.stringify(data, null, 2)) + '</pre>';
+    $$("button", tabs).slice(0, 2).forEach(b => b.addEventListener("click", () => {
+      $$("button", tabs).slice(0, 2).forEach(x => x.setAttribute("aria-selected", "false")); b.setAttribute("aria-selected", "true");
+      if (b.hasAttribute("data-raw")) body.innerHTML = raw; else { body.innerHTML = ""; body.appendChild(tree); }
+    }));
+    let open = true;
+    $("#expand").addEventListener("click", e => { open = !open; $$("details", tree).forEach(d => d.open = open); e.target.textContent = open ? "Collapse all" : "Expand all"; });
+    $("#copy").addEventListener("click", e => copyText(JSON.stringify(data, null, 2), e.target));
+  }
+  function node(key, value, open) {
+    const label = key === null ? "" : '<span class="k">' + esc(key) + '</span>: ';
+    if (value !== null && typeof value === "object") {
+      const isArr = Array.isArray(value);
+      const d = document.createElement("details"); d.open = !!open;
+      const n = isArr ? value.length : Object.keys(value).length;
+      d.innerHTML = '<summary>' + label + (isArr ? "[" : "{") + '<span class="count">' + n + (isArr ? " items" : " keys") + '</span></summary>';
+      (isArr ? value.map((v, i) => [i, v]) : Object.entries(value)).forEach(([k, v]) => d.appendChild(node(String(k), v, true)));
+      return d;
+    }
+    const div = document.createElement("div"); div.className = "leaf";
+    const cls = value === null ? "z" : typeof value === "number" ? "n" : typeof value === "boolean" ? "b" : "s";
+    const shown = value === null ? "null" : typeof value === "string" ? '"' + esc(value) + '"' : esc(String(value));
+    div.innerHTML = label + '<span class="' + cls + '">' + shown + '</span>';
+    return div;
+  }
+
+  function renderHTML(host) {
+    const tabs = $("#tabs"); tabs.hidden = false;
+    tabs.innerHTML = '<button aria-selected="true" data-view="preview">Preview</button><button aria-selected="false" data-view="source">Source</button><button aria-selected="false" data-view="text">Text only</button><span class="spacer"></span><button class="tool" id="copy">Copy HTML</button>';
+    const body = $("#body");
+    const lines = host === "example.com" || host === "" ? EXAMPLE_HTML : EXAMPLE_HTML.map(l => l.replace("Example Domain", host).replace("example.com", host));
+    const views = {
+      preview: '<div class="preview"><h1>Example Domain</h1><p>This domain is for use in illustrative examples in documents. You may use this domain in literature without prior coordination or asking for permission.</p><p><a href="https://www.iana.org/domains/example">More information...</a></p></div><p class="hint" style="margin:10px 0 0;text-align:left">Preview renders the returned HTML without scripts or external requests.</p>',
+      source: '<pre class="code lines">' + lines.map(l => '<span class="ln"></span>' + esc(l).replace(/(&lt;\/?)([a-zA-Z0-9-]+)/g, '$1<span class="tag">$2</span>').replace(/([a-z-]+)=(&quot;[^&]*&quot;)/g, '<span class="attr">$1</span>=$2')).join("\n") + '</pre>',
+      text: '<pre class="code">Example Domain\n\nThis domain is for use in illustrative examples in documents. You may use this domain in literature without prior coordination or asking for permission.\n\nMore information...</pre>',
+    };
+    body.innerHTML = views.preview;
+    $$("[data-view]", tabs).forEach(b => b.addEventListener("click", () => {
+      $$("[data-view]", tabs).forEach(x => x.setAttribute("aria-selected", "false")); b.setAttribute("aria-selected", "true");
+      body.innerHTML = views[b.dataset.view];
+    }));
+    $("#copy").addEventListener("click", e => copyText(lines.join("\n"), e.target));
+  }
+
+  function empty(text) {
+    $("#tabs").hidden = true;
+    $("#body").innerHTML = '<div class="empty"><strong>Nothing to show yet</strong><span>' + esc(text) + '</span></div>';
+  }
+
+  const ERRORS = {
+    badurl: { code: 400, title: "That is not a web address", text: "The URL has to start with http:// or https://.", next: "Try: https://example.com/" },
+    unsupported: { code: 400, title: "JSON is not available for this site", text: "Structured data only works on the supported sites listed below. Other pages can still be scraped as HTML.", action: ["Switch to HTML mode", () => { setSeg("mode", "html"); run(); }] },
+    blocked: { code: 502, title: "The site blocked the plain fetch", text: "The target answered with a bot check and the browser was turned off for this request (Browser: Never).", action: ["Retry with Browser: Always", () => { setSeg("browser", "always"); run(); }] },
+    busy: { code: 503, title: "Every headless browser is busy", text: "Both browsers were in use for 15 seconds. Nothing was fetched.", action: ["Retry now", () => run()], warn: true },
+    ratelimit: { code: 429, title: "Rate limit reached", text: "This address can make 10 requests per minute. The limit resets in 41 seconds.", action: ["Retry in 41 s", null], warn: true },
+  };
+  function showError(kind) {
+    const e = ERRORS[kind];
+    clearInterval(timer); $("#go").disabled = false; $("#tabs").hidden = true;
+    strip('<span class="chip code ' + (e.code < 500 ? "warn" : "bad") + '">' + e.code + '</span><span class="final">' + esc($("#url").value.trim()) + '</span>');
+    const body = $("#body");
+    body.innerHTML = '<div class="error"><div class="head"><span class="code' + (e.warn ? " warn" : "") + '">' + e.code + '</span><h3>' + esc(e.title) + '</h3></div><p>' + esc(e.text) + '</p>'
+      + '<div class="next"><span class="eyebrow">What to do next</span>' + (e.action ? '<button class="tool" id="errbtn"' + (e.action[1] ? "" : " disabled") + '>' + esc(e.action[0]) + '</button>' : '<span class="mono">' + esc(e.next) + '</span>') + '</div></div>';
+    if (e.action && e.action[1]) $("#errbtn").addEventListener("click", e.action[1]);
+  }
+
+  // ---- Snippets ----
+  function renderSnippet() {
+    const url = $("#url").value.trim() || "https://example.com/";
+    const key = state.key ? "••••••••" : "YOUR_API_KEY";
+    const base = "https://ihabov-universal-scraper.fly.dev/scrape";
+    const q = "url=" + encodeURIComponent(url) + "&mode=" + state.mode + "&browser=" + state.browser;
+    const code = {
+      curl: 'curl -H "X-API-Key: ' + key + '" \\\n  "' + base + '?' + q + '"',
+      python: 'import requests\n\nresponse = requests.get(\n    "' + base + '",\n    params={"url": "' + url + '", "mode": "' + state.mode + '", "browser": "' + state.browser + '"},\n    headers={"X-API-Key": "' + key + '"},\n    timeout=120,\n)\nresponse.raise_for_status()\nprint(response.json()["' + (state.mode === "json" ? "parsed" : "content") + '"])',
+      js: 'const params = new URLSearchParams({ url: "' + url + '", mode: "' + state.mode + '", browser: "' + state.browser + '" });\nconst response = await fetch(`' + base + '?${params}`, {\n  headers: { "X-API-Key": "' + key + '" },\n});\nif (!response.ok) throw new Error((await response.json()).detail);\nconsole.log((await response.json()).' + (state.mode === "json" ? "parsed" : "content") + ');',
+    };
+    $("#snipcode").textContent = code[state.lang];
+  }
+  $$("[data-lang]").forEach(b => b.addEventListener("click", () => { state.lang = b.dataset.lang; $$("[data-lang]").forEach(x => x.setAttribute("aria-pressed", String(x === b))); renderSnippet(); }));
+  $("#copysnip").addEventListener("click", e => copyText($("#snipcode").textContent, e.target));
+  $("#url").addEventListener("input", renderSnippet);
+
+  function copyText(text, btn) {
+    const done = () => { const old = btn.textContent; btn.textContent = "Copied"; setTimeout(() => btn.textContent = old, 1200); };
+    try { navigator.clipboard.writeText(text).then(done, () => fallback()); } catch (e) { fallback(); }
+    function fallback() {
+      const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch (e) {} document.body.removeChild(ta);
+    }
+  }
+
+  $("#form").addEventListener("submit", e => { e.preventDefault(); run(); });
+
+  // Opening state: a finished JSON scrape, so the page shows what the tool does.
+  const first = SAMPLES["scrapeme.live"];
+  strip(statusChip(first.status) + '<span class="chip">' + viaIcon(first.via) + '</span><span class="final">https://scrapeme.live/shop/Bulbasaur/</span><span class="num">' + kb(first.bytes) + '</span><span class="num">' + secs(first.ms) + '</span>');
+  renderJSON(first.json);
+  renderSnippet();
+})();
+</script>
+
+</body>
+</html>

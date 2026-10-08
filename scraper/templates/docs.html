@@ -9,6 +9,7 @@
       <a href="#authentication">Authentication</a>
       <a href="#scrape">GET /scrape</a>
       <a href="#response">Response</a>
+      <a href="#batch">POST /scrape/batch</a>
       <a href="#json">JSON mode</a>
       <a href="#errors">Errors</a>
       <a href="#rate-limits">Rate limits</a>
@@ -74,6 +75,32 @@
   "parsed": null
 }</pre><button class="tool copy" type="button" data-copy-target="code-html">Copy</button></div>
 
+      <h2 id="batch"><span class="method">POST</span>/scrape/batch</h2>
+      <p>Scrapes up to 50 URLs in one call. Every URL is handled exactly as <code>GET /scrape</code> would handle it, with the same checks, cache and browser fallback. A URL that fails doesn't fail the batch: its error is reported next to it.</p>
+      <h3>Request body (JSON)</h3>
+      <div class="tablewrap">
+        <table>
+          <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
+          <tr><td><code>urls</code></td><td>array of strings</td><td>Yes</td><td>1 to 50 URLs. The same page listed twice is scraped once.</td></tr>
+          <tr><td><code>mode</code></td><td>string</td><td>No</td><td><code>html</code> (default) or <code>json</code>, applied to every URL.</td></tr>
+          <tr><td><code>browser</code></td><td>string</td><td>No</td><td><code>auto</code> (default), <code>never</code> or <code>always</code>, applied to every URL.</td></tr>
+        </table>
+      </div>
+      <h3>Response</h3>
+      <p><code>200</code> with <code>results</code> in the same order as <code>urls</code>, plus <code>succeeded</code> and <code>failed</code> counts. Each result has the <code>url</code> as sent, a <code>status</code> (<code>200</code>, or the <a href="#errors">error status</a> <code>/scrape</code> would have returned), and either <code>result</code>, shaped like a <a href="#response">/scrape response</a>, or a <code>detail</code> message.</p>
+      <div class="codeblock"><pre class="code" id="code-batch-res">{
+  "results": [
+    { "url": "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava", "status": 200,
+      "result": { "url": "...", "status_code": 200, "ok": true, "fetched_with": "http", "content": null, "parsed": { "name": "TVRĐAVA", ... } },
+      "detail": null },
+    { "url": "https://example.com/", "status": 400, "result": null,
+      "detail": "JSON isn't available for this page. Supported sites: ..." }
+  ],
+  "succeeded": 1,
+  "failed": 1
+}</pre><button class="tool copy" type="button" data-copy-target="code-batch-res">Copy</button></div>
+      <p>A batch counts as one request per URL against your <a href="#rate-limits">quota</a>, and is refused as a whole with <code>429</code> if it doesn't fit. To be gentle on the sites you scrape, at most 4 URLs of one site are fetched at the same time, started at least a quarter of a second apart. Batches that need the browser take longer: allow a few minutes for 50 such URLs.</p>
+
       <h2 id="json">JSON mode</h2>
       <p>With <code>mode=json</code>, pages on these sites come back as structured JSON. Other sites return <code>400</code>, and the scraper checks this before fetching the page.</p>
       <div class="tablewrap">
@@ -124,15 +151,17 @@
           <tr><td><code>403</code></td><td>The URL points to a private or internal address (like <code>localhost</code> or <code>192.168.x.x</code>), which is not allowed.</td></tr>
           <tr><td><code>413</code></td><td>The page is larger than 5 MB.</td></tr>
           <tr><td><code>415</code></td><td>The URL is not an HTML page (for example a PDF, image or JSON file).</td></tr>
-          <tr><td><code>422</code></td><td>A parameter is missing or has an invalid value, like <code>mode=pdf</code>. The <code>detail</code> field is a list saying which parameter is wrong.</td></tr>
-          <tr><td><code>429</code></td><td>Rate limit exceeded. The body is <code>{"error": "Rate limit exceeded: 10 per 1 minute"}</code>.</td></tr>
+          <tr><td><code>422</code></td><td>A parameter is missing or has an invalid value, like <code>mode=pdf</code>, or a batch has no URLs or more than 50. The <code>detail</code> field is a list saying which parameter is wrong.</td></tr>
+          <tr><td><code>429</code></td><td>Rate limit or quota exceeded, see <a href="#rate-limits">Rate limits</a>. The body says which limit, like <code>{"error": "Rate limit exceeded: 10 per 1 minute"}</code>, and the <code>Retry-After</code> header says how many seconds to wait.</td></tr>
           <tr><td><code>502</code></td><td>The page couldn't be fetched: the site is down, timed out, or redirected too many times. With <code>mode=json</code>, also when the page didn't contain the expected data (for example a 404 page, or the site changed its layout).</td></tr>
           <tr><td><code>503</code></td><td>Every headless browser was busy for 15 seconds. Wait a moment and try again.</td></tr>
         </table>
       </div>
 
       <h2 id="rate-limits">Rate limits</h2>
-      <p>Each client IP address can make <strong>10 requests per minute</strong>. Requests over the limit get <code>429</code>; wait a minute and try again. Requests with a wrong key count too.</p>
+      <p>Requests with a valid key are counted against <strong>that key's quota: 300 URLs per minute and 10,000 per day</strong>. Every URL counts, including ones served from the cache, so a batch of 20 URLs uses 20.</p>
+      <p>Requests with a missing or wrong key are limited to <strong>10 per minute per client IP address</strong>, so keys can't be guessed quickly.</p>
+      <p>Over either limit the API answers <code>429</code> with a <code>Retry-After</code> header in seconds.</p>
 
       <h2 id="examples">Examples</h2>
       <h3>curl</h3>
@@ -150,6 +179,26 @@ response = requests.get(
 response.raise_for_status()
 
 print(response.json())</pre><button class="tool copy" type="button" data-copy-target="code-py">Copy</button></div>
+      <h3>Python, many pages at once</h3>
+      <div class="codeblock"><pre class="code" id="code-py-batch">import requests
+
+urls = [
+    "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava",
+    "https://www.knjizare-vulkan.rs/domaci-klasici/312916-izabrana-dela-mese-selimovica-tp",
+]
+response = requests.post(
+    "https://ihabov-universal-scraper.fly.dev/scrape/batch",
+    json={"urls": urls, "mode": "json"},
+    headers={"X-API-Key": "YOUR_API_KEY"},
+    timeout=300,
+)
+response.raise_for_status()
+
+for item in response.json()["results"]:
+    if item["status"] == 200:
+        print(item["result"]["parsed"]["name"])
+    else:
+        print(item["url"], "failed:", item["detail"])</pre><button class="tool copy" type="button" data-copy-target="code-py-batch">Copy</button></div>
       <h3>JavaScript</h3>
       <div class="codeblock"><pre class="code" id="code-js">const params = new URLSearchParams({ url: "https://example.com", mode: "html" });
 
@@ -171,8 +220,12 @@ console.log(data.content);</pre><button class="tool copy" type="button" data-cop
           <tr><td>Total time for the plain fetch</td><td>25 seconds, covering all retries, waits between them and redirect hops. After that the page counts as unreachable (<code>502</code>, or the browser with <code>browser=auto</code>).</td></tr>
           <tr><td>Retries</td><td>Up to 3, with increasing waits, on timeouts and on <code>429</code>, <code>502</code>, <code>503</code>, <code>504</code> from the target site, as long as they fit in the 25 seconds</td></tr>
           <tr><td>Redirects</td><td>Followed automatically, up to 5. Every hop is checked against the internal-address block.</td></tr>
+          <tr><td>Caching</td><td>A fetched page is kept for 10 minutes (30 seconds if the site returned an error) and shared by <code>mode=html</code> and <code>mode=json</code>, so asking for both fetches the page once. Separate per <code>browser</code> option.</td></tr>
+          <tr><td>Batches</td><td>Up to 50 URLs, 8 fetched at a time, at most 4 per site at once and started at least 0.25 seconds apart. Batch URLs wait up to 2 minutes for a free browser instead of 15 seconds.</td></tr>
           <tr><td>Content types</td><td>HTML only (<code>text/html</code>, <code>application/xhtml+xml</code>)</td></tr>
           <tr><td>Browser</td><td>Up to 2 at a time (a request waits up to 15 seconds for a free one, then gets <code>503</code>), 30 seconds to load the page, up to 20 seconds for a bot check to finish, and up to 5 seconds for scripts to finish rendering. Images, fonts and video are not loaded. Every request the browser makes is checked against the internal-address block, and redirect hops are checked after the page loads.</td></tr>
+          <tr><td>Sites that block</td><td>With <code>browser=auto</code>, a site that blocked a plain request is sent straight to the browser for the next 10 minutes. If the site passes a bot check in the browser, the resulting cookies are kept for 20 minutes for your key only, and later pages from that site are tried over plain HTTP with them first, which is much faster.</td></tr>
+          <tr><td>JSON mode in the browser</td><td>Stops as soon as the page contains the data, instead of waiting for everything else on the page to load.</td></tr>
         </table>
       </div>
       <p><strong>First request after a quiet period:</strong> the server sleeps when idle, and waking it adds 2 to 5 seconds. Use a client timeout of at least 120 seconds: a slow site can use the whole 25-second fetch budget and then a full browser run on top.</p>

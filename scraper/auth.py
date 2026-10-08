@@ -1,6 +1,7 @@
 import logging
 import os
 import secrets
+
 from fastapi.security import APIKeyHeader
 
 logger = logging.getLogger(__name__)
@@ -12,6 +13,7 @@ if not API_KEYS:
     logger.warning("API_KEYS is empty, every request will be rejected.")
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
 
 def is_valid_key(key: str | None) -> bool:
     if not key:

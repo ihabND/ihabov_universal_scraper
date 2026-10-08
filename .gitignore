@@ -9,3 +9,9 @@ venv/
 # Tooling
 .pytest_cache/
 .env
+
+# Tooling and packaging
+.ruff_cache/
+*.egg-info/
+build/
+dist/

@@ -1,16 +1,20 @@
-import re
-import json
 import html
+import json
 import logging
+import re
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 from urllib.parse import urljoin, urlsplit
-from bs4 import BeautifulSoup
-from functions import Page, ParseError
+
+from bs4 import BeautifulSoup, SoupStrainer
+
+from .errors import ParseError
+from .page import Page
 
 logger = logging.getLogger(__name__)
 
 Parsed = dict | list[dict]
+
 
 @dataclass(frozen=True)
 class Parser:
@@ -19,25 +23,37 @@ class Parser:
     example: str
     parse: Callable[[BeautifulSoup, str], Parsed]
     # Shown on the web pages (front page cards and the docs table), so both stay in sync with the code.
-    pages: str = ""        # which pages on the site this parser handles
+    pages: str = ""  # which pages on the site this parser handles
     shape: str = "object"  # "object" for one item, "list" for a list of items
-    fields: str = ""       # the keys in `parsed`, comma separated
+    fields: str = ""  # the keys in `parsed`, comma separated
+    # True when the parser reads nothing but <script type="application/ld+json"> tags. The page is
+    # then parsed with only those tags kept, which is about twice as fast on large pages.
+    json_ld_only: bool = False
+
+
+# Keeps only the JSON-LD script tags when building the soup.
+JSON_LD_TAGS = SoupStrainer("script", attrs={"type": "application/ld+json"})
+
 
 def digits_only(text: str) -> int | None:
     digits = re.sub(r"\D", "", text)
     return int(digits) if digits else None
 
+
 def to_price(text: str) -> float | None:
     match = re.search(r"\d+(?:\.\d+)?", text.replace(",", ""))
     return float(match.group()) if match else None
 
+
 def text_of(tag) -> str | None:
     return tag.get_text(strip=True) if tag else None
+
 
 def as_list(value) -> list:
     if value is None:
         return []
     return value if isinstance(value, list) else [value]
+
 
 def names_of(value) -> list[str]:
     """Names from a JSON-LD value that may be one object, a list of objects, or plain strings."""
@@ -48,6 +64,7 @@ def names_of(value) -> list[str]:
             names.append(html.unescape(name))
     return names
 
+
 def json_ld_items(data):
     """Every object in a JSON-LD document, whatever its shape: one object, a list, or an @graph."""
     if isinstance(data, list):
@@ -56,6 +73,7 @@ def json_ld_items(data):
     elif isinstance(data, dict):
         yield data
         yield from json_ld_items(data.get("@graph"))
+
 
 def find_json_ld(soup: BeautifulSoup, type_name: str) -> dict | None:
     for tag in soup.find_all("script", {"type": "application/ld+json"}):
@@ -69,12 +87,14 @@ def find_json_ld(soup: BeautifulSoup, type_name: str) -> dict | None:
                 return item
     return None
 
+
 def to_minutes(duration: str | None) -> int | None:
     match = re.fullmatch(r"PT(?:(\d+)H)?(?:(\d+)M)?", duration or "")
     if not match:
         return None
     hours, minutes = (int(g) if g else 0 for g in match.groups())
     return hours * 60 + minutes
+
 
 CAR_FIELDS = {
     "Make": "brand",
@@ -91,6 +111,7 @@ CAR_FIELDS = {
     "Body style": "body",
 }
 CAR_NUMBER_FIELDS = {"year", "power_hp", "mileage_km"}
+
 
 def parse_car(soup: BeautifulSoup, url: str) -> dict:
     car = {}
@@ -117,6 +138,7 @@ def parse_car(soup: BeautifulSoup, url: str) -> dict:
     car["image"] = urljoin(url, image["src"]) if image else None
     return car
 
+
 def parse_pokemon(soup: BeautifulSoup, url: str) -> dict:
     summary = soup.find("div", class_="summary")
     if summary is None:
@@ -132,20 +154,25 @@ def parse_pokemon(soup: BeautifulSoup, url: str) -> dict:
         "stock": digits_only(stock),
     }
 
+
 BOOK_RATINGS = {"One": 1, "Two": 2, "Three": 3, "Four": 4, "Five": 5}
+
 
 def parse_books(soup: BeautifulSoup, url: str) -> list[dict]:
     books = []
     for card in soup.select("article.product_pod"):
         rating_classes = card.select_one("p.star-rating")["class"]
-        books.append({
-            "title": card.h3.a["title"],
-            "price": to_price(card.select_one("p.price_color").get_text()),
-            "stock": text_of(card.select_one("p.instock.availability")),
-            "rating": next((BOOK_RATINGS[c] for c in rating_classes if c in BOOK_RATINGS), None),
-            "url": urljoin(url, card.h3.a["href"]),
-        })
+        books.append(
+            {
+                "title": card.h3.a["title"],
+                "price": to_price(card.select_one("p.price_color").get_text()),
+                "stock": text_of(card.select_one("p.instock.availability")),
+                "rating": next((BOOK_RATINGS[c] for c in rating_classes if c in BOOK_RATINGS), None),
+                "url": urljoin(url, card.h3.a["href"]),
+            }
+        )
     return books
+
 
 def parse_book(soup: BeautifulSoup, url: str) -> dict:
     product = soup.find("div", class_="product_main")
@@ -170,15 +197,19 @@ def parse_book(soup: BeautifulSoup, url: str) -> dict:
         "image": urljoin(url, image["src"]) if image else None,
     }
 
+
 def parse_quotes(soup: BeautifulSoup, url: str) -> list[dict]:
     quotes = []
     for quote in soup.select("div.quote"):
-        quotes.append({
-            "quote": quote.select_one("span.text").get_text(strip=True).strip("“”"),
-            "author": text_of(quote.select_one("small.author")),
-            "tags": [t.get_text(strip=True) for t in quote.select("a.tag")],
-        })
+        quotes.append(
+            {
+                "quote": quote.select_one("span.text").get_text(strip=True).strip("“”"),
+                "author": text_of(quote.select_one("small.author")),
+                "tags": [t.get_text(strip=True) for t in quote.select("a.tag")],
+            }
+        )
     return quotes
+
 
 def parse_vulkan_product(soup: BeautifulSoup, url: str) -> dict:
     product = find_json_ld(soup, "Product")
@@ -197,6 +228,7 @@ def parse_vulkan_product(soup: BeautifulSoup, url: str) -> dict:
         "image": product.get("image"),
         "url": offer.get("url") or url,
     }
+
 
 def parse_ipon_product(soup: BeautifulSoup, url: str) -> dict:
     product = find_json_ld(soup, "Product")
@@ -221,6 +253,7 @@ def parse_ipon_product(soup: BeautifulSoup, url: str) -> dict:
         "url": offer.get("url") or url,
     }
 
+
 def instruction_steps(value) -> list[str]:
     """Flatten recipeInstructions: plain strings, HowToStep objects, or HowToSection groups of steps."""
     steps = []
@@ -238,6 +271,7 @@ def instruction_steps(value) -> list[str]:
         if text:
             steps.append(text)
     return steps
+
 
 def parse_recipe(soup: BeautifulSoup, url: str) -> dict:
     recipe = find_json_ld(soup, "Recipe")
@@ -271,7 +305,9 @@ def parse_recipe(soup: BeautifulSoup, url: str) -> dict:
         "date_published": (recipe.get("datePublished") or "")[:10] or None,
     }
 
+
 IMDB_TYPES = ("Movie", "TVSeries", "TVMiniSeries", "TVEpisode", "VideoGame")
+
 
 def parse_movie(soup: BeautifulSoup, url: str) -> dict:
     movie = next((m for t in IMDB_TYPES if (m := find_json_ld(soup, t))), None)
@@ -301,48 +337,94 @@ def parse_movie(soup: BeautifulSoup, url: str) -> dict:
         "url": movie.get("url") or url,
     }
 
+
 PARSERS = [
-    Parser("webscraper.io", re.compile(r"/test-sites/product/[^/]+/?"),
-           "https://webscraper.io/test-sites/product/bmw-e24-635csi-1954-c002", parse_car,
-           pages="A car page under /test-sites/product/",
-           fields="brand, model, year, engine, drivetrain, power_hp, country, mileage_km, condition, exterior_color, "
-                  "interior_color, body, price_eur, availability, rating, seller, transmission, tags, colors, image"),
-    Parser("scrapeme.live", re.compile(r"/shop/(?!page/)[^/]+/?"),
-           "https://scrapeme.live/shop/Bulbasaur/", parse_pokemon,
-           pages="A product page, like /shop/Bulbasaur/",
-           fields="name, price, description, sku, categories, tags, stock"),
-    Parser("books.toscrape.com", re.compile(r"/(index\.html)?|/catalogue/(page-\d+\.html|category/.+)"),
-           "https://books.toscrape.com/catalogue/page-2.html", parse_books,
-           pages="The home page, /catalogue/page-N.html or a category page", shape="list",
-           fields="title, price, stock, rating (1–5), url"),
-    Parser("books.toscrape.com", re.compile(r"/catalogue/(?!category/)[^/]+_\d+/index\.html"),
-           "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html", parse_book,
-           pages="A book page, like /catalogue/a-light-in-the-attic_1000/index.html",
-           fields="title, genre, price, price_incl_tax, tax, stock, rating (1–5), reviews, upc, description, image"),
-    Parser("quotes.toscrape.com", re.compile(r"/(page/\d+/?|tag/.+)?"),
-           "https://quotes.toscrape.com/page/2/", parse_quotes,
-           pages="The home page, /page/N/ or /tag/<tag>/", shape="list",
-           fields="quote, author, tags"),
-    Parser("knjizare-vulkan.rs", re.compile(r"/[^/]+/\d+-[^/]+/?"),
-           "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava", parse_vulkan_product,
-           pages="A product page, like /domaci-klasici/25486-tvrdava",
-           fields="name, publisher, price, currency, isbn, sku, product_id, description, image, url"),
-    Parser("iponcomp.com", re.compile(r"/shop/product/[^/]+/\d+/?"),
-           "https://iponcomp.com/shop/product/valueline-usb-32-gen-1-hub-4-ports-type-c-connection-cable/1871163", parse_ipon_product,
-           pages="A product page, like /shop/product/<name>/1871163",
-           fields="name, brand, price (null when the shop lists no price), currency, availability, shipping_price, "
-                  "category, sku, mpn, ean, description, image, url"),
-    Parser("allrecipes.com", re.compile(r"/recipe/\d+/[^/]+/?|/[^/]+-recipe-\d+/?"),
-           "https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies/", parse_recipe,
-           pages="A recipe page, like /recipe/10813/best-chocolate-chip-cookies/ or /apple-cider-bath-cinnamon-rolls-recipe-12111965",
-           fields="name, description, author, rating, rating_count, prep_minutes, cook_minutes, total_minutes, yield, "
-                  "categories, cuisine, ingredients, instructions, nutrition, image, date_published"),
-    Parser("imdb.com", re.compile(r"/title/tt\d+/?"),
-           "https://www.imdb.com/title/tt0111161/", parse_movie,
-           pages="A title page, like /title/tt0111161/ (movies, series and episodes). Needs the browser, which browser=auto uses automatically.",
-           fields="title, alternate_title, type, year, date_published, content_rating, genres, rating, rating_count, "
-                  "runtime_minutes, directors, writers, actors, keywords, description, poster, trailer, url"),
+    Parser(
+        "webscraper.io",
+        re.compile(r"/test-sites/product/[^/]+/?"),
+        "https://webscraper.io/test-sites/product/bmw-e24-635csi-1954-c002",
+        parse_car,
+        pages="A car page under /test-sites/product/",
+        fields="brand, model, year, engine, drivetrain, power_hp, country, mileage_km, condition, exterior_color, "
+        "interior_color, body, price_eur, availability, rating, seller, transmission, tags, colors, image",
+    ),
+    Parser(
+        "scrapeme.live",
+        re.compile(r"/shop/(?!page/)[^/]+/?"),
+        "https://scrapeme.live/shop/Bulbasaur/",
+        parse_pokemon,
+        pages="A product page, like /shop/Bulbasaur/",
+        fields="name, price, description, sku, categories, tags, stock",
+    ),
+    Parser(
+        "books.toscrape.com",
+        re.compile(r"/(index\.html)?|/catalogue/(page-\d+\.html|category/.+)"),
+        "https://books.toscrape.com/catalogue/page-2.html",
+        parse_books,
+        pages="The home page, /catalogue/page-N.html or a category page",
+        shape="list",
+        fields="title, price, stock, rating (1–5), url",
+    ),
+    Parser(
+        "books.toscrape.com",
+        re.compile(r"/catalogue/(?!category/)[^/]+_\d+/index\.html"),
+        "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
+        parse_book,
+        pages="A book page, like /catalogue/a-light-in-the-attic_1000/index.html",
+        fields="title, genre, price, price_incl_tax, tax, stock, rating (1–5), reviews, upc, description, image",
+    ),
+    Parser(
+        "quotes.toscrape.com",
+        re.compile(r"/(page/\d+/?|tag/.+)?"),
+        "https://quotes.toscrape.com/page/2/",
+        parse_quotes,
+        pages="The home page, /page/N/ or /tag/<tag>/",
+        shape="list",
+        fields="quote, author, tags",
+    ),
+    Parser(
+        "knjizare-vulkan.rs",
+        re.compile(r"/[^/]+/\d+-[^/]+/?"),
+        "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava",
+        parse_vulkan_product,
+        pages="A product page, like /domaci-klasici/25486-tvrdava",
+        fields="name, publisher, price, currency, isbn, sku, product_id, description, image, url",
+        json_ld_only=True,
+    ),
+    Parser(
+        "iponcomp.com",
+        re.compile(r"/shop/product/[^/]+/\d+/?"),
+        "https://iponcomp.com/shop/product/valueline-usb-32-gen-1-hub-4-ports-type-c-connection-cable/1871163",
+        parse_ipon_product,
+        pages="A product page, like /shop/product/<name>/1871163",
+        fields="name, brand, price (null when the shop lists no price), currency, availability, shipping_price, "
+        "category, sku, mpn, ean, description, image, url",
+        json_ld_only=True,
+    ),
+    Parser(
+        "allrecipes.com",
+        re.compile(r"/recipe/\d+/[^/]+/?|/[^/]+-recipe-\d+/?"),
+        "https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies/",
+        parse_recipe,
+        pages="A recipe page, like /recipe/10813/best-chocolate-chip-cookies/ "
+        "or /apple-cider-bath-cinnamon-rolls-recipe-12111965",
+        fields="name, description, author, rating, rating_count, prep_minutes, cook_minutes, total_minutes, yield, "
+        "categories, cuisine, ingredients, instructions, nutrition, image, date_published",
+        json_ld_only=True,
+    ),
+    Parser(
+        "imdb.com",
+        re.compile(r"/title/tt\d+/?"),
+        "https://www.imdb.com/title/tt0111161/",
+        parse_movie,
+        pages="A title page, like /title/tt0111161/ (movies, series and episodes). "
+        "Needs the browser, which browser=auto uses automatically.",
+        fields="title, alternate_title, type, year, date_published, content_rating, genres, rating, rating_count, "
+        "runtime_minutes, directors, writers, actors, keywords, description, poster, trailer, url",
+        json_ld_only=True,
+    ),
 ]
+
 
 def find_parser(url: str) -> Parser | None:
     parts = urlsplit(url)
@@ -352,13 +434,34 @@ def find_parser(url: str) -> Parser | None:
             return parser
     return None
 
+
+PARSER_ERRORS = (AttributeError, KeyError, TypeError, IndexError)
+
+
+def make_soup(parser: Parser, content: bytes) -> BeautifulSoup:
+    return BeautifulSoup(content, "lxml", parse_only=JSON_LD_TAGS if parser.json_ld_only else None)
+
+
 def parse_page(parser: Parser, response: Page) -> Parsed:
-    soup = BeautifulSoup(response.content, "lxml")
+    soup = make_soup(parser, response.content)
     try:
         result = parser.parse(soup, response.url)
-    except (AttributeError, KeyError, TypeError, IndexError) as e:
+    except PARSER_ERRORS as e:
         logger.warning("Parser for %s failed on %s: %r", parser.host, response.url, e)
         raise ParseError("Couldn't find the expected data on this page.") from e
     if not result:
         raise ParseError("Couldn't find the expected data on this page.")
     return result
+
+
+def ready_check(parser: Parser, url: str) -> Callable[[bytes], bool]:
+    """A quiet test the browser runs while a page loads: True as soon as the parser can read its data
+    from the page, so the browser can stop waiting for the rest of the page to finish loading."""
+
+    def ready(content: bytes) -> bool:
+        try:
+            return bool(parser.parse(make_soup(parser, content), url))
+        except (ParseError, *PARSER_ERRORS):
+            return False
+
+    return ready
