@@ -1,5 +1,6 @@
 """The web app: the JSON API, the web pages, and the health check."""
 
+import hashlib
 import json
 import logging
 import time
@@ -35,6 +36,24 @@ app = FastAPI(
 )
 templates = Jinja2Templates(directory=PACKAGE_DIR / "templates")
 app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
+
+_asset_hashes: dict[str, tuple[float, str]] = {}
+
+
+def asset_url(name: str) -> str:
+    """URL of a static file with a fingerprint of its contents, like /static/app.css?v=3f9a1c2b7d.
+    Any change to the file changes the URL, so browsers load the new version instead of a cached one.
+    The fingerprint is recomputed only when the file's modification time changes."""
+    path = PACKAGE_DIR / "static" / name
+    mtime = path.stat().st_mtime
+    cached = _asset_hashes.get(name)
+    if cached is None or cached[0] != mtime:
+        cached = (mtime, hashlib.sha256(path.read_bytes()).hexdigest()[:10])
+        _asset_hashes[name] = cached
+    return f"/static/{name}?v={cached[1]}"
+
+
+templates.env.globals["asset_url"] = asset_url
 
 
 class RateLimited(Exception):
@@ -107,12 +126,39 @@ def scrape_batch(request: Request, body: BatchRequest, api_key: str | None = Sec
 
 # ---- Web pages -----------------------------------------------------------------------------
 
+SITE_COLORS = ["#3b6fd6", "#2f8a4c", "#b5730b", "#7a4bd0", "#c8372d", "#1b8a8a", "#d0631d", "#a67c00"]
+
+
+def site_cards() -> list[dict]:
+    """One card per supported site for the front page. A site with several parsers
+    (books.toscrape.com has a listing and a book page) gets one card that opens its first example."""
+    by_host: dict[str, dict] = {}
+    for parser in PARSERS:
+        card = by_host.setdefault(
+            parser.host, {"host": parser.host, "example": parser.example, "labels": [], "shapes": []}
+        )
+        card["labels"].append(parser.label)
+        card["shapes"].append(parser.shape)
+    return [
+        {
+            "host": card["host"],
+            "example": card["example"],
+            "label": " or ".join(card["labels"][:1] + [label.lower() for label in card["labels"][1:]]),
+            "shape": " / ".join(dict.fromkeys(card["shapes"])),
+            "color": SITE_COLORS[i % len(SITE_COLORS)],
+        }
+        for i, card in enumerate(by_host.values())
+    ]
+
+
+SITE_CARDS = site_cards()
+
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, url: str = "", mode: Mode = "html", browser: BrowserOption = "auto"):
     # url/mode/browser in the query string only prefill the form, nothing is fetched on GET.
     return templates.TemplateResponse(
-        request, "index.html", {"url": url, "mode": mode, "browser": browser, "parsers": PARSERS}
+        request, "index.html", {"url": url, "mode": mode, "browser": browser, "sites": SITE_CARDS}
     )
 
 
@@ -130,7 +176,7 @@ def index_submit(
     api_key: str = Form(""),
 ):
     # Fallback for browsers without JavaScript; the page itself normally calls /scrape directly.
-    context = {"url": url, "mode": mode, "browser": browser, "api_key": api_key, "parsers": PARSERS}
+    context = {"url": url, "mode": mode, "browser": browser, "api_key": api_key, "sites": SITE_CARDS}
     status_code = 200
     try:
         owner = authorize(request, api_key)

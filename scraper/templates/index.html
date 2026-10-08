@@ -1,101 +1,105 @@
 {% extends "base.html" %}
-{% block title %}Ihabov Universal Scraper{% endblock %}
+{% block body_class %}workbench{% endblock %}
 {% block content %}
-<div class="page" id="top">
-  <section class="hero">
-    <h1>Any public page, as clean <em>HTML</em> or structured <em>JSON</em>.</h1>
-    <p>Paste a URL. The scraper fetches it with a real browser fingerprint, follows redirects safely, and switches to a headless browser only when a site blocks the plain request.</p>
-  </section>
-
-  <section class="bar" aria-label="Scrape a page">
-    <form class="urlrow" id="scrape-form" method="post" action="/">
-      <span class="lead" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg></span>
-      <input id="url" name="url" type="text" inputmode="url" spellcheck="false" autocomplete="off" placeholder="https://example.com/page" value="{{ url or '' }}" aria-label="Page URL" required>
-      <button class="primary" id="go" type="submit">Scrape <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-    </form>
-    <div class="options">
-      <div class="seg" role="group" aria-label="Mode"><span class="label">Mode</span>
-        <input type="radio" name="mode" id="mode-html" value="html" form="scrape-form" {% if mode != "json" %}checked{% endif %}><label for="mode-html">HTML</label>
-        <input type="radio" name="mode" id="mode-json" value="json" form="scrape-form" {% if mode == "json" %}checked{% endif %}><label for="mode-json">JSON</label>
-      </div>
-      <div class="seg" role="group" aria-label="Browser"><span class="label">Browser</span>
-        <input type="radio" name="browser" id="browser-auto" value="auto" form="scrape-form" {% if browser not in ("never", "always") %}checked{% endif %}><label for="browser-auto">Auto</label>
-        <input type="radio" name="browser" id="browser-never" value="never" form="scrape-form" {% if browser == "never" %}checked{% endif %}><label for="browser-never">Never</label>
-        <input type="radio" name="browser" id="browser-always" value="always" form="scrape-form" {% if browser == "always" %}checked{% endif %}><label for="browser-always">Always</label>
-      </div>
-      <label class="keyfield" id="keyfield">
-        <span class="label">API key</span>
-        <input id="key" name="api_key" type="password" form="scrape-form" autocomplete="off" placeholder="paste your key" value="{{ api_key or '' }}">
-        <span class="state"><i></i><span id="keystate">not set</span></span>
+<div class="app">
+  <aside class="left">
+    {# A real form, so scraping also works without JavaScript; app.js takes over when it loads. #}
+    <form class="group" id="scrape-form" method="post" action="/">
+      <h2>Request</h2>
+      <label class="field"><span>URL</span>
+        <input class="input" id="url" name="url" type="text" inputmode="url" spellcheck="false" autocomplete="off"
+               placeholder="https://example.com/page" value="{{ url or '' }}" required>
       </label>
-      <span class="hint" id="hint">JSON works on the supported sites below. Auto uses the browser only when a site blocks the plain fetch. The key stays in this browser.</span>
-    </div>
-  </section>
-
-  <section class="result" aria-live="polite">
-    <div class="strip" id="strip">
-      {% if error %}
-        <span class="chip code bad">error</span><span class="final">{{ url }}</span>
-      {% elif result %}
-        <span class="chip code {{ 'ok' if result.ok else 'bad' }}">{{ result.status_code }}</span>
-        <span class="chip">{{ result.fetched_with }}</span>
-        <span class="final" title="{{ result.url }}">{{ result.url }}</span>
-      {% else %}
-        <span class="muted" style="font-size:13px">The result shows up here.</span>
-      {% endif %}
-    </div>
-    <div class="tabs" id="tabs" hidden></div>
-    <div class="body" id="body">
-      {% if error %}
-        <div class="error"><div class="head"><span class="code">error</span><h3>The scrape did not go through</h3></div><p>{{ error }}</p></div>
-      {% elif result %}
-        {# Plain rendering for browsers without JavaScript; app.js replaces it with the rich view. #}
-        <pre class="code">{{ parsed_json if parsed_json is not none else result.content }}</pre>
-        <script type="application/json" id="seed">{{ seed | safe }}</script>
-      {% else %}
-        <div class="empty">
-          <strong>Try one of the supported sites</strong>
-          <span>Pick a site below to load its example page as JSON, or paste any URL and get its HTML.</span>
-        </div>
-      {% endif %}
-    </div>
-    <details class="snip" id="snip">
-      <summary>Use this request from code</summary>
-      <div class="inner">
-        <div class="pick" role="group" aria-label="Language">
-          <button class="tool" type="button" data-lang="curl" aria-pressed="true">curl</button>
-          <button class="tool" type="button" data-lang="python" aria-pressed="false">Python</button>
-          <button class="tool" type="button" data-lang="js" aria-pressed="false">JavaScript</button>
-          <span class="spacer"></span>
-          <button class="tool" type="button" id="copysnip">Copy</button>
-        </div>
-        <pre class="code" id="snipcode"></pre>
+      <div class="pair">
+        <fieldset class="field"><legend>Output</legend>
+          <div class="seg">
+            <input type="radio" name="mode" id="mode-html" value="html" {% if mode != "json" %}checked{% endif %}><label for="mode-html">HTML</label>
+            <input type="radio" name="mode" id="mode-json" value="json" {% if mode == "json" %}checked{% endif %}><label for="mode-json">JSON</label>
+          </div>
+        </fieldset>
+        <fieldset class="field"><legend>Headless browser</legend>
+          <div class="seg">
+            <input type="radio" name="browser" id="browser-auto" value="auto" {% if browser not in ("never", "always") %}checked{% endif %}><label for="browser-auto">Auto</label>
+            <input type="radio" name="browser" id="browser-never" value="never" {% if browser == "never" %}checked{% endif %}><label for="browser-never">Never</label>
+            <input type="radio" name="browser" id="browser-always" value="always" {% if browser == "always" %}checked{% endif %}><label for="browser-always">Always</label>
+          </div>
+        </fieldset>
       </div>
-    </details>
-  </section>
+      <div class="keypair">
+        <label class="field"><span>API key</span>
+          <span class="keyrow" id="keyrow">
+            <input class="input" id="key" name="api_key" type="password" autocomplete="off" placeholder="paste your key" value="{{ api_key or '' }}">
+            <i class="dot" aria-hidden="true"></i>
+          </span>
+        </label>
+        <button class="run" id="run" type="submit">Scrape <kbd>Ctrl ↵</kbd></button>
+      </div>
+      <p class="hint" id="hint">Auto tries a plain request first and opens a browser only if the site blocks it. The key stays in this browser.</p>
+    </form>
 
-  <div class="sections">
-    <section class="section" id="sites">
-      <span class="eyebrow">JSON mode</span>
-      <h2>Supported sites</h2>
-      <p class="sub">These pages come back as structured data instead of HTML. Click one to try its example.</p>
+    <section class="group">
+      <h2>Supported sites <span class="tag">JSON</span></h2>
       <div class="sites">
-        {% for p in parsers %}
-        <a class="site" href="/?url={{ p.example | urlencode }}&amp;mode=json" data-example="{{ p.example }}">
-          <span class="host">{{ p.host }}<span class="shape">{{ p.shape }}</span></span>
-          <span class="what">{{ p.pages }}</span>
+        {% for site in sites %}
+        <a class="site" href="/?url={{ site.example | urlencode }}&amp;mode=json" data-example="{{ site.example }}" data-host="{{ site.host }}">
+          <span class="badge" style="background: {{ site.color }}" aria-hidden="true">{{ site.host[0] | upper }}</span>
+          <span class="site-text"><b>{{ site.host }}</b><span>{{ site.label }}</span></span>
+          <span class="tag">{{ site.shape }}</span>
         </a>
         {% endfor %}
       </div>
-      <script type="application/json" id="sites-data">[{% for p in parsers %}{"host": {{ p.host | tojson }}}{% if not loop.last %},{% endif %}{% endfor %}]</script>
     </section>
-    <section class="section">
-      <span class="eyebrow">This browser</span>
-      <h2>Recent</h2>
-      <p class="sub">Your last scrapes, kept in this browser only. Click one to run it again.</p>
-      <div class="recent" id="recent"><div class="none">Nothing yet. Your scrapes will show up here.</div></div>
-      <div class="recent-tools"><button class="tool" type="button" id="clear-recent">Clear list</button></div>
+
+    <section class="group">
+      <h2>Recent <button class="linkbtn" id="clear-recent" type="button">Clear</button></h2>
+      <div class="recent" id="recent"><p class="hint">Your scrapes show up here, kept in this browser only.</p></div>
     </section>
-  </div>
+  </aside>
+
+  <main class="right" aria-live="polite">
+    <div class="status" id="status">
+      {% if error %}
+        <span class="pill bad">error</span><span class="url">{{ url }}</span>
+      {% elif result %}
+        <span class="pill {{ 'good' if result.ok else 'bad' }}">{{ result.status_code }}</span>
+        <span class="meta">via <b>{{ result.fetched_with }}</b></span><span class="url" title="{{ result.url }}">{{ result.url }}</span>
+      {% else %}
+        <span class="meta">No request yet</span>
+      {% endif %}
+    </div>
+    <div class="tabs" id="tabs" hidden></div>
+    <div class="view" id="view">
+      {% if error %}
+        <div class="message error"><h3>The scrape did not go through</h3><p>{{ error }}</p></div>
+      {% elif result %}
+        {# Plain rendering for browsers without JavaScript; app.js replaces it with the full view. #}
+        <pre class="src plain">{{ parsed_json if parsed_json is not none else result.content }}</pre>
+        <script type="application/json" id="seed">{{ seed | safe }}</script>
+      {% else %}
+        <div class="message">
+          <h3>Scrape a page to see it here</h3>
+          <p>Paste any URL to get its HTML, or pick a supported site to get its data as JSON. Lists open as a table you can sort and download as CSV.</p>
+          <div class="quick">
+            <button class="tool" type="button" data-try="https://books.toscrape.com/catalogue/page-2.html" data-mode="json">Book listing as a table</button>
+            <button class="tool" type="button" data-try="https://www.imdb.com/title/tt0111161/" data-mode="json">IMDb, through the browser</button>
+            <button class="tool" type="button" data-try="https://example.com/" data-mode="html">example.com as HTML</button>
+          </div>
+        </div>
+      {% endif %}
+    </div>
+    <details class="snip">
+      <summary>Use this request from code</summary>
+      <div class="snip-body">
+        <div class="langs" role="group" aria-label="Language">
+          <button type="button" data-lang="curl" aria-pressed="true">curl</button>
+          <button type="button" data-lang="python" aria-pressed="false">Python</button>
+          <button type="button" data-lang="js" aria-pressed="false">JavaScript</button>
+          <span class="spacer"></span>
+          <button type="button" id="copy-snippet">Copy</button>
+        </div>
+        <pre id="snippet"></pre>
+      </div>
+    </details>
+  </main>
 </div>
 {% endblock %}

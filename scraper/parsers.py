@@ -26,6 +26,7 @@ class Parser:
     pages: str = ""  # which pages on the site this parser handles
     shape: str = "object"  # "object" for one item, "list" for a list of items
     fields: str = ""  # the keys in `parsed`, comma separated
+    label: str = ""  # a few words for the front page card, like "Book listing"
     # True when the parser reads nothing but <script type="application/ld+json"> tags. The page is
     # then parsed with only those tags kept, which is about twice as fast on large pages.
     json_ld_only: bool = False
@@ -344,6 +345,7 @@ PARSERS = [
         re.compile(r"/test-sites/product/[^/]+/?"),
         "https://webscraper.io/test-sites/product/bmw-e24-635csi-1954-c002",
         parse_car,
+        label="Car page",
         pages="A car page under /test-sites/product/",
         fields="brand, model, year, engine, drivetrain, power_hp, country, mileage_km, condition, exterior_color, "
         "interior_color, body, price_eur, availability, rating, seller, transmission, tags, colors, image",
@@ -353,6 +355,7 @@ PARSERS = [
         re.compile(r"/shop/(?!page/)[^/]+/?"),
         "https://scrapeme.live/shop/Bulbasaur/",
         parse_pokemon,
+        label="Product page",
         pages="A product page, like /shop/Bulbasaur/",
         fields="name, price, description, sku, categories, tags, stock",
     ),
@@ -361,6 +364,7 @@ PARSERS = [
         re.compile(r"/(index\.html)?|/catalogue/(page-\d+\.html|category/.+)"),
         "https://books.toscrape.com/catalogue/page-2.html",
         parse_books,
+        label="Book listing",
         pages="The home page, /catalogue/page-N.html or a category page",
         shape="list",
         fields="title, price, stock, rating (1–5), url",
@@ -370,6 +374,7 @@ PARSERS = [
         re.compile(r"/catalogue/(?!category/)[^/]+_\d+/index\.html"),
         "https://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html",
         parse_book,
+        label="Book page",
         pages="A book page, like /catalogue/a-light-in-the-attic_1000/index.html",
         fields="title, genre, price, price_incl_tax, tax, stock, rating (1–5), reviews, upc, description, image",
     ),
@@ -378,6 +383,7 @@ PARSERS = [
         re.compile(r"/(page/\d+/?|tag/.+)?"),
         "https://quotes.toscrape.com/page/2/",
         parse_quotes,
+        label="Quote listing",
         pages="The home page, /page/N/ or /tag/<tag>/",
         shape="list",
         fields="quote, author, tags",
@@ -387,6 +393,7 @@ PARSERS = [
         re.compile(r"/[^/]+/\d+-[^/]+/?"),
         "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava",
         parse_vulkan_product,
+        label="Book product page",
         pages="A product page, like /domaci-klasici/25486-tvrdava",
         fields="name, publisher, price, currency, isbn, sku, product_id, description, image, url",
         json_ld_only=True,
@@ -396,6 +403,7 @@ PARSERS = [
         re.compile(r"/shop/product/[^/]+/\d+/?"),
         "https://iponcomp.com/shop/product/valueline-usb-32-gen-1-hub-4-ports-type-c-connection-cable/1871163",
         parse_ipon_product,
+        label="Shop product page",
         pages="A product page, like /shop/product/<name>/1871163",
         fields="name, brand, price (null when the shop lists no price), currency, availability, shipping_price, "
         "category, sku, mpn, ean, description, image, url",
@@ -406,6 +414,7 @@ PARSERS = [
         re.compile(r"/recipe/\d+/[^/]+/?|/[^/]+-recipe-\d+/?"),
         "https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies/",
         parse_recipe,
+        label="Recipe page",
         pages="A recipe page, like /recipe/10813/best-chocolate-chip-cookies/ "
         "or /apple-cider-bath-cinnamon-rolls-recipe-12111965",
         fields="name, description, author, rating, rating_count, prep_minutes, cook_minutes, total_minutes, yield, "
@@ -417,6 +426,7 @@ PARSERS = [
         re.compile(r"/title/tt\d+/?"),
         "https://www.imdb.com/title/tt0111161/",
         parse_movie,
+        label="Title page, uses the browser",
         pages="A title page, like /title/tt0111161/ (movies, series and episodes). "
         "Needs the browser, which browser=auto uses automatically.",
         fields="title, alternate_title, type, year, date_published, content_rating, genres, rating, rating_count, "

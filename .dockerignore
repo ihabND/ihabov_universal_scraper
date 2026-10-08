@@ -10,3 +10,5 @@ docs/
 examples/
 .ruff_cache/
 dontdelete.txt
+tests/
+.pytest_cache/

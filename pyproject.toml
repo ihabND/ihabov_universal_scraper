@@ -14,7 +14,7 @@ requires-python = ">=3.12"
 dynamic = ["dependencies"]
 
 [project.optional-dependencies]
-dev = ["ruff==0.16.10"]
+dev = ["ruff==0.16.10", "pytest==9.1.1", "fakeredis==2.39.0", "httpx2==2.13.1"]
 
 [tool.setuptools]
 packages = ["scraper"]
@@ -24,6 +24,10 @@ scraper = ["templates/*.html", "static/*"]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
 
 [tool.ruff]
 line-length = 120

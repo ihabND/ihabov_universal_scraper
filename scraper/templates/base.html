@@ -3,35 +3,30 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Ihabov Universal Scraper{% endblock %}</title>
-  <meta name="description" content="Fetch any public web page as clean HTML, or as structured JSON on supported sites.">
+  <title>{% block title %}Ihabov Scraper{% endblock %}</title>
+  <meta name="description" content="Scrape any public web page as clean HTML, or as structured JSON on supported sites.">
   <link rel="icon" href="data:,">
+  <script>
+    // Apply a saved light/dark choice before the first paint, so the page never flashes the wrong theme.
+    try { var saved = localStorage.getItem("theme"); if (saved) document.documentElement.dataset.theme = saved; } catch (e) {}
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="{{ asset_url('app.css') }}">
 </head>
-<body>
-  <header class="top">
-    <div class="in">
-      <a class="wordmark" href="/">
-        <span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h14M5 12h14M5 16h8"/></svg></span>
-        Ihabov Scraper
-      </a>
-      <nav>
-        <a class="navlink" href="/#sites">Supported sites</a>
-        <a class="navlink" href="/docs" {% if page == "docs" %}aria-current="page"{% endif %}>Docs</a>
-        <a class="navcta" href="/docs#scrape">API reference</a>
-      </nav>
-    </div>
+<body class="{% block body_class %}{% endblock %}">
+  <header class="topbar">
+    <a class="mark" href="/"><i aria-hidden="true">~</i>Ihabov Scraper<small>v1</small></a>
+    <nav>
+      <a class="hide-sm" href="/docs#json">Supported sites</a>
+      <a href="/docs" {% if page == "docs" %}aria-current="page"{% endif %}>API docs</a>
+      <button class="iconbtn" id="theme-toggle" type="button" aria-label="Switch between light and dark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </nav>
   </header>
-
   {% block content %}{% endblock %}
-
-  <footer class="foot">
-    <span>Ihabov Universal Scraper</span>
-    <span><a href="/docs">API docs</a> &middot; Keys are handed out personally, there is no sign-up.</span>
-  </footer>
-  <script src="/static/app.js" defer></script>
+  <script src="{{ asset_url('app.js') }}" defer></script>
 </body>
 </html>
