@@ -1,60 +1,39 @@
-# API keys
+# Accounts and API keys
 
-Every scrape needs a valid API key. Keys are handed out by hand: there is no sign-up. Each person gets their own key, so you can take access away from one person without affecting anyone else.
+Every scrape needs an account. People sign up on the website, then create API keys on their dashboard. Nothing is handed out by hand any more, and the old `API_KEYS` environment variable is gone.
 
 ## How it works
 
-- Valid keys are read from the `API_KEYS` environment variable, as a comma-separated list: `API_KEYS="key1,key2,key3"`.
-- On Fly.io, `API_KEYS` is a **secret**. It's encrypted, never in git, and passed to the app as an environment variable.
-- The check lives in `scraper/auth.py`. Keys are compared with `secrets.compare_digest`, so response timing doesn't reveal anything about a key.
-- **The app fails closed:** if `API_KEYS` is empty or missing, every request is rejected with `401`.
-- The keys are loaded once when the app starts. After changing them, the app has to restart. `fly secrets set` does that automatically.
+- **Accounts** (`scraper/users.py`): sign-up with email and password at `/signup`, login at `/login`. Passwords are hashed with scrypt from the standard library. There is no email verification and no password reset yet.
+- **Sessions:** logging in sets a `session` cookie (`HttpOnly`, `SameSite=Lax`, `Secure` over HTTPS) that lasts 30 days. The database stores only the SHA-256 of the cookie value.
+- **API keys** (`scraper/auth.py`): every account can have up to **3** keys. A key looks like `sk_…` (32 random bytes). It's shown once, when it's created. The database stores only its SHA-256 and the first 9 characters, for the dashboard. Revoking deletes the key, and it stops working right away.
+- **Storage** (`scraper/db.py`): one SQLite file at `DATABASE_PATH` (default `data/scraper.db`). The tables are created on first use.
+- **Forms are protected against cross-site requests:** every form that changes something carries the session's CSRF token, and form posts whose `Origin` header names another site are refused.
 
-## What is protected
+## Pages
 
-| Route         | Access                                                                 |
-|---------------|------------------------------------------------------------------------|
-| `GET /`       | Public. Shows the web form.                                            |
-| `POST /`      | The web form. Needs a valid key in the form's "API key" field.         |
-| `GET /scrape` | JSON API. Needs a valid key in the `X-API-Key` header.                 |
-| `GET /docs`   | Public. The hand-written API docs page.                                |
-| `/redoc`, `/openapi.json` | FastAPI's generated docs are disabled (404).               |
+| Route | What it does |
+|---|---|
+| `/` | The landing page: what the scraper does, supported sites, the free account, links to sign up and log in. Logged-in users are sent to `/app`. Old links like `/?url=…&mode=json` are sent to `/app?url=…&mode=json`. |
+| `/signup`, `/login` | Create an account (then lands on `/app`), log in (then back to the page that asked for it, or `/app`). `POST /logout` logs out. |
+| `/dashboard` | Usage (left right now, today, total, the last 7 days) and the API keys: create, see when each was last used, revoke. |
+| `/account` | Change the password (logs out every other device), log out, delete the account (needs the password; deletes the keys and usage too). |
+| `/app` | The workbench, for logged-in users only (others are sent to log in and come back with the same URL). Scraping there uses the login: the page sends the session cookie plus the CSRF token in `X-CSRF-Token`. |
 
-## Generating a key
+## Limits
 
-Make one key per person:
+All limits live in `scraper/quota.py`, use a moving window, and are shared across machines through Redis when `REDIS_URL` is set.
 
-```powershell
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
+| Limit | Default | Env variable |
+|---|---|---|
+| Scrapes per user, all keys and the website together, one per URL | 10 a minute | `USER_RATE_LIMIT` |
+| Requests with a missing or wrong key, per IP | 10 a minute | `IP_RATE_LIMIT` |
+| Login attempts, per IP and per email (password checks on `/account` count too) | 5 a minute | `LOGIN_RATE_LIMIT` |
+| Sign-ups per IP | 3 a day | `SIGNUP_RATE_LIMIT` |
 
-This gives 32 random bytes, about 43 URL-safe characters. Don't make keys up by hand.
+Values use the `limits` syntax, e.g. `USER_RATE_LIMIT="10/minute"` or `"10/minute;500/day"`.
 
-Keep a private note of which key belongs to whom, for example in a password manager. You'll need it to revoke the right one.
-
-## Adding, listing, and revoking keys on Fly.io
-
-`API_KEYS` always holds the **complete** list, so every change means setting the whole list again.
-
-Add a key (include all existing keys plus the new one):
-
-```powershell
-fly secrets set API_KEYS="existing_key_1,existing_key_2,new_key" -a ihabov-universal-scraper
-```
-
-Revoke a key (set the list again without it):
-
-```powershell
-fly secrets set API_KEYS="existing_key_1" -a ihabov-universal-scraper
-```
-
-See whether the secret is set (Fly only shows a digest, never the value):
-
-```powershell
-fly secrets list -a ihabov-universal-scraper
-```
-
-Setting a secret restarts the app with the new keys within a few seconds.
+A successful `/scrape` or `/scrape/batch` response carries `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` (seconds). Over the limit, the answer is `429` with `Retry-After`.
 
 ## Using the API
 
@@ -80,24 +59,35 @@ resp.raise_for_status()
 print(resp.json()["content"])
 ```
 
-A missing or wrong key returns:
+A missing, wrong or revoked key returns:
 
 ```json
 HTTP 401
 {"detail": "Invalid or missing API key"}
 ```
 
-## Using the website
+## Deploying on Fly.io
 
-Open https://ihabov-universal-scraper.fly.dev/, enter the URL, choose HTML or JSON, paste your key, and press **Scrape**.
+The database lives on a Fly volume, so accounts survive restarts and deploys. `fly.toml` mounts it at `/data` and sets `DATABASE_PATH=/data/scraper.db`. Once, before the first deploy with accounts:
+
+```powershell
+fly volumes create scraper_data -r ams -s 1 -a ihabov-universal-scraper
+fly secrets unset API_KEYS -a ihabov-universal-scraper   # no longer read
+```
+
+A volume belongs to one machine, so the app runs on one machine. Running several would mean moving the database to Postgres.
+
+Backup, by making a consistent copy on the machine and downloading it (copying `scraper.db` directly can miss the latest writes, which SQLite keeps in `scraper.db-wal` for a while):
+
+```powershell
+fly ssh console -a ihabov-universal-scraper -C "/app/.venv/bin/python -c ""import sqlite3; sqlite3.connect('/data/scraper.db').backup(sqlite3.connect('/data/backup.db'))"""
+fly ssh sftp get /data/backup.db scraper-backup.db -a ihabov-universal-scraper
+```
 
 ## Running locally
 
-Set the variable before starting the app:
-
 ```powershell
-$env:API_KEYS = "devkey"
 uvicorn main:app --reload
 ```
 
-Then use `devkey` as the key at http://127.0.0.1:8000/.
+Open http://127.0.0.1:8000/signup, create an account, and create a key on the dashboard. The database is created at `data/scraper.db` (ignored by git). Delete that file to start over.

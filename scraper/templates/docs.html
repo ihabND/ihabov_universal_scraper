@@ -6,122 +6,85 @@
   <div class="docs">
     <nav class="side" aria-label="Sections">
       <span class="eyebrow">On this page</span>
+      <a href="#quickstart">Quickstart</a>
       <a href="#authentication">Authentication</a>
       <a href="#scrape">GET /scrape</a>
-      <a href="#response">Response</a>
       <a href="#batch">POST /scrape/batch</a>
       <a href="#json">JSON mode</a>
       <a href="#errors">Errors</a>
       <a href="#rate-limits">Rate limits</a>
-      <a href="#examples">Examples</a>
-      <a href="#limits">Limits</a>
+      <a href="#good-to-know">Good to know</a>
     </nav>
 
     <div class="content">
       <span class="eyebrow">API reference</span>
-      <h1>One endpoint, two kinds of output.</h1>
-      <p class="lede">Fetch any public web page and get back its formatted HTML, or, on supported sites, the page's data as structured JSON. The scraper uses a real browser's network fingerprint, follows redirects safely, and blocks requests to internal addresses.</p>
+      <h1>Scraper API</h1>
+      <p class="lede">Any public page as formatted HTML, or as structured JSON on supported sites. One endpoint for a page, one for a batch.</p>
 
-      <h2 id="base-url">Base URL</h2>
-      <div class="codeblock"><pre class="code" id="code-base">https://ihabov-universal-scraper.fly.dev</pre><button class="tool copy" type="button" data-copy-target="code-base">Copy</button></div>
+      {# ---- Quickstart ---------------------------------------------------------------------- #}
+      <h2 id="quickstart">Quickstart</h2>
+      <ol class="qs">
+        <li><b>Get a key.</b> <a href="/signup">Sign up</a>, then create one on your <a href="/dashboard">dashboard</a>.</li>
+        <li><b>Make a call</b> with the key in the <code>X-API-Key</code> header:
+          <div class="codecard" data-tabs>
+            <div class="codecard-head">
+              <div class="codecard-tabs" role="tablist" aria-label="Language">
+                <button type="button" role="tab" data-tab="qs-curl" aria-selected="true">curl</button>
+                <button type="button" role="tab" data-tab="qs-py" aria-selected="false">Python</button>
+                <button type="button" role="tab" data-tab="qs-js" aria-selected="false">JavaScript</button>
+              </div>
+              <button class="tool" type="button" data-copy-visible>Copy</button>
+            </div>
+<pre class="code" data-panel="qs-curl">curl -H "X-API-Key: YOUR_API_KEY" \
+  "https://ihabov-universal-scraper.fly.dev/scrape?url=https://example.com/"</pre>
+<pre class="code" data-panel="qs-py">import requests
 
+response = requests.get(
+    "https://ihabov-universal-scraper.fly.dev/scrape",
+    params={"url": "https://example.com/"},
+    headers={"X-API-Key": "YOUR_API_KEY"},
+    timeout=120,
+)
+response.raise_for_status()
+print(response.json()["content"])</pre>
+<pre class="code" data-panel="qs-js">const params = new URLSearchParams({ url: "https://example.com/" });
+const response = await fetch(`https://ihabov-universal-scraper.fly.dev/scrape?${params}`, {
+  headers: { "X-API-Key": "YOUR_API_KEY" },
+});
+if (!response.ok) throw new Error((await response.json()).detail);
+console.log((await response.json()).content);</pre>
+          </div>
+        </li>
+        <li><b>Read the result.</b> The page's HTML is in <code>content</code>; see the <a href="#response">response fields</a>.</li>
+      </ol>
+
+      {# ---- Authentication ------------------------------------------------------------------ #}
       <h2 id="authentication">Authentication</h2>
-      <p>Every request needs an API key, sent in the <code>X-API-Key</code> header. Keys are handed out personally; there is no sign-up.</p>
-      <div class="codeblock"><pre class="code" id="code-auth">X-API-Key: YOUR_API_KEY</pre><button class="tool copy" type="button" data-copy-target="code-auth">Copy</button></div>
-      <p>Don't put the key in the URL, since query strings end up in logs and browser history. A missing or wrong key returns <code>401</code>.</p>
+      <p>Send your key in the <code>X-API-Key</code> header. An account can have up to {{ max_keys }} keys, for example one per program, and each can be revoked on its own. Keys start with <code>sk_</code> and are shown once, when you create them. A missing, wrong or revoked key returns <code>401</code>.</p>
+      <p class="callout"><b>Note</b> Never put the key in the URL: query strings end up in logs and browser history.</p>
 
-      <h2 id="scrape"><span class="method">GET</span>/scrape</h2>
-      <p>Fetches a page and returns its content.</p>
-      <h3>Query parameters</h3>
-      <div class="tablewrap">
-        <table>
-          <tr><th>Name</th><th>Type</th><th>Required</th><th>Description</th></tr>
-          <tr>
-            <td><code>url</code></td><td>string</td><td>Yes</td>
-            <td>The page to scrape. Must start with <code>http://</code> or <code>https://</code>. URL-encode it if it contains <code>&amp;</code> or <code>?</code> (most HTTP libraries do this for you).</td>
-          </tr>
-          <tr>
-            <td><code>mode</code></td><td>string</td><td>No</td>
-            <td><code>html</code> (default): the full HTML, formatted, as one string in <code>content</code>.<br><code>json</code>: the page's data as structured JSON in <code>parsed</code>. Only works on <a href="#json">supported sites</a>.</td>
-          </tr>
-          <tr>
-            <td><code>browser</code></td><td>string</td><td>No</td>
-            <td><code>auto</code> (default): fetch the page normally, and only if the site blocks it (a bot check, or status <code>202</code>, <code>403</code>, <code>429</code> or <code>503</code>), try again with a real headless browser. With <code>mode=json</code>, also when a page that loaded fine doesn't contain the expected data (an error page like a <code>404</code> is not retried).<br><code>never</code>: don't use the browser.<br><code>always</code>: go straight to the browser, for sites you know need it. Slower: a few seconds per page.</td>
-          </tr>
-        </table>
-      </div>
+      {# ---- GET /scrape ---------------------------------------------------------------------- #}
+      <h2 id="scrape">GET /scrape</h2>
+      <div class="endpoint"><span class="method">GET</span><code id="url-scrape">https://ihabov-universal-scraper.fly.dev/scrape</code><button class="tool" type="button" data-copy-target="url-scrape">Copy</button></div>
+      <p>Fetches one page and returns its HTML, or its data as JSON.</p>
+      <dl class="params">
+        <div><dt><code>url</code><span class="req">required</span></dt><dd>The page, starting with <code>http://</code> or <code>https://</code>. URL-encode it (most HTTP libraries do this for you).</dd></div>
+        <div><dt><code>mode</code><span>html · json</span></dt><dd><code>html</code> (default): the formatted HTML in <code>content</code>. <code>json</code>: the page's data in <code>parsed</code>, on <a href="#json">supported sites</a> only.</dd></div>
+        <div><dt><code>browser</code><span>auto · never · always</span></dt><dd><code>auto</code> (default): a plain request first, the headless browser only if the site blocks it (a bot check, or <code>202</code>, <code>403</code>, <code>429</code>, <code>503</code>), or if a JSON page that loaded fine lacks the data. <code>never</code>: no browser. <code>always</code>: straight to the browser, a few seconds slower.</dd></div>
+      </dl>
 
-      <h2 id="response">Response</h2>
-      <p>A successful call returns <code>200</code> with this JSON body:</p>
-      <div class="tablewrap">
-        <table>
-          <tr><th>Field</th><th>Type</th><th>Description</th></tr>
-          <tr><td><code>url</code></td><td>string</td><td>The normalized URL that was scraped.</td></tr>
-          <tr><td><code>status_code</code></td><td>integer</td><td>The HTTP status the <em>target site</em> returned.</td></tr>
-          <tr><td><code>ok</code></td><td>boolean</td><td><code>true</code> if the target site's status was below 400.</td></tr>
-          <tr><td><code>fetched_with</code></td><td>string</td><td><code>http</code> for a normal fetch, <code>browser</code> when the headless browser was used.</td></tr>
-          <tr><td><code>content</code></td><td>string or null</td><td>The formatted HTML with <code>mode=html</code>, otherwise <code>null</code>.</td></tr>
-          <tr><td><code>parsed</code></td><td>object, array of objects or null</td><td>The page's data with <code>mode=json</code>, otherwise <code>null</code>. See <a href="#json">JSON mode</a>.</td></tr>
-        </table>
-      </div>
-      <p><code>ok</code> and <code>status_code</code> describe the page, not the API call. A page that returns <code>404</code> still comes back as a <code>200</code> from the API, with <code>"ok": false</code>, so you can see the error page's content.</p>
-      <h3>Example response (<code>mode=html</code>)</h3>
-      <div class="codeblock"><pre class="code" id="code-html">{
-  "url": "https://example.com/",
-  "status_code": 200,
-  "ok": true,
-  "fetched_with": "http",
-  "content": "&lt;!DOCTYPE html&gt;\n&lt;html lang=\"en\"&gt;\n &lt;head&gt;\n  &lt;title&gt;\n   Example Domain\n  &lt;/title&gt;\n ...",
-  "parsed": null
-}</pre><button class="tool copy" type="button" data-copy-target="code-html">Copy</button></div>
-
-      <h2 id="batch"><span class="method">POST</span>/scrape/batch</h2>
-      <p>Scrapes up to 50 URLs in one call. Every URL is handled exactly as <code>GET /scrape</code> would handle it, with the same checks, cache and browser fallback. A URL that fails doesn't fail the batch: its error is reported next to it.</p>
-      <h3>Request body (JSON)</h3>
-      <div class="tablewrap">
-        <table>
-          <tr><th>Field</th><th>Type</th><th>Required</th><th>Description</th></tr>
-          <tr><td><code>urls</code></td><td>array of strings</td><td>Yes</td><td>1 to 50 URLs. The same page listed twice is scraped once.</td></tr>
-          <tr><td><code>mode</code></td><td>string</td><td>No</td><td><code>html</code> (default) or <code>json</code>, applied to every URL.</td></tr>
-          <tr><td><code>browser</code></td><td>string</td><td>No</td><td><code>auto</code> (default), <code>never</code> or <code>always</code>, applied to every URL.</td></tr>
-        </table>
-      </div>
-      <h3>Response</h3>
-      <p><code>200</code> with <code>results</code> in the same order as <code>urls</code>, plus <code>succeeded</code> and <code>failed</code> counts. Each result has the <code>url</code> as sent, a <code>status</code> (<code>200</code>, or the <a href="#errors">error status</a> <code>/scrape</code> would have returned), and either <code>result</code>, shaped like a <a href="#response">/scrape response</a>, or a <code>detail</code> message.</p>
-      <div class="codeblock"><pre class="code" id="code-batch-res">{
-  "results": [
-    { "url": "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava", "status": 200,
-      "result": { "url": "...", "status_code": 200, "ok": true, "fetched_with": "http", "content": null, "parsed": { "name": "TVRĐAVA", ... } },
-      "detail": null },
-    { "url": "https://example.com/", "status": 400, "result": null,
-      "detail": "JSON isn't available for this page. Supported sites: ..." }
-  ],
-  "succeeded": 1,
-  "failed": 1
-}</pre><button class="tool copy" type="button" data-copy-target="code-batch-res">Copy</button></div>
-      <p>A batch counts as one request per URL against your <a href="#rate-limits">quota</a>, and is refused as a whole with <code>429</code> if it doesn't fit. To be gentle on the sites you scrape, at most 4 URLs of one site are fetched at the same time, started at least a quarter of a second apart. Batches that need the browser take longer: allow a few minutes for 50 such URLs.</p>
-
-      <h2 id="json">JSON mode</h2>
-      <p>With <code>mode=json</code>, pages on these sites come back as structured JSON. Other sites return <code>400</code>, and the scraper checks this before fetching the page.</p>
-      <div class="tablewrap">
-        <table>
-          <tr><th>Site</th><th>Pages</th><th><code>parsed</code> is</th></tr>
-          {% for p in parsers %}
-          <tr>
-            <td><code>{{ p.host }}</code></td>
-            <td>{{ p.pages }}</td>
-            <td><span class="pill">{{ "a list of objects" if p.shape == "list" else "one object" }}</span><br>{{ p.fields }}</td>
-          </tr>
-          {% endfor %}
-        </table>
-      </div>
-      <p>Try it with an example page:</p>
-      <ul>
-        {% for p in parsers %}<li><a href="/?url={{ p.example | urlencode }}&amp;mode=json"><code>{{ p.example }}</code></a></li>
-        {% endfor %}
-      </ul>
-      <h3>Example response (<code>mode=json</code>)</h3>
-      <div class="codeblock"><pre class="code" id="code-json">{
+      <div class="codecard" data-tabs>
+        <div class="codecard-head">
+          <div class="codecard-tabs" role="tablist" aria-label="Example">
+            <button type="button" role="tab" data-tab="s-req" aria-selected="true">Request</button>
+            <button type="button" role="tab" data-tab="s-json" aria-selected="false">JSON response</button>
+            <button type="button" role="tab" data-tab="s-html" aria-selected="false">HTML response</button>
+          </div>
+          <button class="tool" type="button" data-copy-visible>Copy</button>
+        </div>
+<pre class="code" data-panel="s-req">curl -H "X-API-Key: YOUR_API_KEY" \
+  "https://ihabov-universal-scraper.fly.dev/scrape?url=https://scrapeme.live/shop/Bulbasaur/&amp;mode=json"</pre>
+<pre class="code" data-panel="s-json">{
   "url": "https://scrapeme.live/shop/Bulbasaur/",
   "status_code": 200,
   "ok": true,
@@ -136,55 +99,54 @@
     "tags": ["bulbasaur", "Overgrow", "Seed"],
     "stock": 45
   }
-}</pre><button class="tool copy" type="button" data-copy-target="code-json">Copy</button></div>
-
-      <h2 id="errors">Errors</h2>
-      <p>Errors use standard HTTP status codes and a JSON body with a <code>detail</code> message:</p>
-      <div class="codeblock"><pre class="code" id="code-err">{
-  "detail": "Invalid URL, only HTTP and HTTPS."
-}</pre><button class="tool copy" type="button" data-copy-target="code-err">Copy</button></div>
-      <div class="tablewrap">
-        <table>
-          <tr><th>Status</th><th>Meaning</th></tr>
-          <tr><td><code>400</code></td><td>The URL is invalid, or uses a scheme other than <code>http</code>/<code>https</code>, or <code>mode=json</code> was sent for a page that isn't <a href="#json">supported</a>, or <code>browser=always</code> was sent to a server where the browser is turned off.</td></tr>
-          <tr><td><code>401</code></td><td>The API key is missing or wrong.</td></tr>
-          <tr><td><code>403</code></td><td>The URL points to a private or internal address (like <code>localhost</code> or <code>192.168.x.x</code>), which is not allowed.</td></tr>
-          <tr><td><code>413</code></td><td>The page is larger than 5 MB.</td></tr>
-          <tr><td><code>415</code></td><td>The URL is not an HTML page (for example a PDF, image or JSON file).</td></tr>
-          <tr><td><code>422</code></td><td>A parameter is missing or has an invalid value, like <code>mode=pdf</code>, or a batch has no URLs or more than 50. The <code>detail</code> field is a list saying which parameter is wrong.</td></tr>
-          <tr><td><code>429</code></td><td>Rate limit or quota exceeded, see <a href="#rate-limits">Rate limits</a>. The body says which limit, like <code>{"error": "Rate limit exceeded: 10 per 1 minute"}</code>, and the <code>Retry-After</code> header says how many seconds to wait.</td></tr>
-          <tr><td><code>502</code></td><td>The page couldn't be fetched: the site is down, timed out, or redirected too many times. With <code>mode=json</code>, also when the page didn't contain the expected data (for example a 404 page, or the site changed its layout).</td></tr>
-          <tr><td><code>503</code></td><td>Every headless browser was busy for 15 seconds. Wait a moment and try again.</td></tr>
-        </table>
+}</pre>
+<pre class="code" data-panel="s-html">{
+  "url": "https://example.com/",
+  "status_code": 200,
+  "ok": true,
+  "fetched_with": "http",
+  "content": "&lt;!DOCTYPE html&gt;\n&lt;html lang=\"en\"&gt;\n &lt;head&gt;\n  &lt;title&gt;\n   Example Domain\n  &lt;/title&gt;\n ...",
+  "parsed": null
+}</pre>
       </div>
 
-      <h2 id="rate-limits">Rate limits</h2>
-      <p>Requests with a valid key are counted against <strong>that key's quota: 300 URLs per minute and 10,000 per day</strong>. Every URL counts, including ones served from the cache, so a batch of 20 URLs uses 20.</p>
-      <p>Requests with a missing or wrong key are limited to <strong>10 per minute per client IP address</strong>, so keys can't be guessed quickly.</p>
-      <p>Over either limit the API answers <code>429</code> with a <code>Retry-After</code> header in seconds.</p>
+      <h3 id="response">Response fields</h3>
+      <div class="tablewrap">
+        <table>
+          <tr><th>Field</th><th>Meaning</th></tr>
+          <tr><td><code>url</code></td><td>The normalized URL that was scraped.</td></tr>
+          <tr><td><code>status_code</code></td><td>The status the <em>target site</em> returned.</td></tr>
+          <tr><td><code>ok</code></td><td><code>true</code> if that status was below 400.</td></tr>
+          <tr><td><code>fetched_with</code></td><td><code>http</code>, or <code>browser</code> when the headless browser was used.</td></tr>
+          <tr><td><code>content</code></td><td>The formatted HTML with <code>mode=html</code>, otherwise <code>null</code>.</td></tr>
+          <tr><td><code>parsed</code></td><td>An object or a list of objects with <code>mode=json</code>, otherwise <code>null</code>.</td></tr>
+        </table>
+      </div>
+      <p class="callout"><b>Note</b> <code>ok</code> and <code>status_code</code> describe the page, not the API call. A page that returns <code>404</code> still comes back as a <code>200</code> with <code>"ok": false</code>, so you can see the error page.</p>
 
-      <h2 id="examples">Examples</h2>
-      <h3>curl</h3>
-      <div class="codeblock"><pre class="code" id="code-curl">curl -H "X-API-Key: YOUR_API_KEY" \
-  "https://ihabov-universal-scraper.fly.dev/scrape?url=https://scrapeme.live/shop/Bulbasaur/&amp;mode=json"</pre><button class="tool copy" type="button" data-copy-target="code-curl">Copy</button></div>
-      <h3>Python</h3>
-      <div class="codeblock"><pre class="code" id="code-py">import requests
+      {# ---- POST /scrape/batch ------------------------------------------------------------- #}
+      <h2 id="batch">POST /scrape/batch</h2>
+      <div class="endpoint"><span class="method">POST</span><code id="url-batch">https://ihabov-universal-scraper.fly.dev/scrape/batch</code><button class="tool" type="button" data-copy-target="url-batch">Copy</button></div>
+      <p>Scrapes up to 50 URLs in one call, each handled exactly like <code>GET /scrape</code>. A URL that fails is reported next to it and doesn't fail the rest.</p>
+      <dl class="params">
+        <div><dt><code>urls</code><span class="req">required</span></dt><dd>1 to 50 URLs. The same page listed twice is scraped once.</dd></div>
+        <div><dt><code>mode</code><span>html · json</span></dt><dd>Applied to every URL. Default <code>html</code>.</dd></div>
+        <div><dt><code>browser</code><span>auto · never · always</span></dt><dd>Applied to every URL. Default <code>auto</code>.</dd></div>
+      </dl>
 
-response = requests.get(
-    "https://ihabov-universal-scraper.fly.dev/scrape",
-    params={"url": "https://scrapeme.live/shop/Bulbasaur/", "mode": "json"},
-    headers={"X-API-Key": "YOUR_API_KEY"},
-    timeout=120,
-)
-response.raise_for_status()
-
-print(response.json())</pre><button class="tool copy" type="button" data-copy-target="code-py">Copy</button></div>
-      <h3>Python, many pages at once</h3>
-      <div class="codeblock"><pre class="code" id="code-py-batch">import requests
+      <div class="codecard" data-tabs>
+        <div class="codecard-head">
+          <div class="codecard-tabs" role="tablist" aria-label="Example">
+            <button type="button" role="tab" data-tab="b-req" aria-selected="true">Python request</button>
+            <button type="button" role="tab" data-tab="b-res" aria-selected="false">Response</button>
+          </div>
+          <button class="tool" type="button" data-copy-visible>Copy</button>
+        </div>
+<pre class="code" data-panel="b-req">import requests
 
 urls = [
     "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava",
-    "https://www.knjizare-vulkan.rs/domaci-klasici/312916-izabrana-dela-mese-selimovica-tp",
+    "https://example.com/",
 ]
 response = requests.post(
     "https://ihabov-universal-scraper.fly.dev/scrape/batch",
@@ -198,37 +160,102 @@ for item in response.json()["results"]:
     if item["status"] == 200:
         print(item["result"]["parsed"]["name"])
     else:
-        print(item["url"], "failed:", item["detail"])</pre><button class="tool copy" type="button" data-copy-target="code-py-batch">Copy</button></div>
-      <h3>JavaScript</h3>
-      <div class="codeblock"><pre class="code" id="code-js">const params = new URLSearchParams({ url: "https://example.com", mode: "html" });
+        print(item["url"], "failed:", item["detail"])</pre>
+<pre class="code" data-panel="b-res">{
+  "results": [
+    { "url": "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava", "status": 200,
+      "result": { "url": "...", "status_code": 200, "ok": true, "fetched_with": "http", "content": null, "parsed": { "name": "TVRĐAVA", ... } },
+      "detail": null },
+    { "url": "https://example.com/", "status": 400, "result": null,
+      "detail": "JSON isn't available for this page. Supported sites: ..." }
+  ],
+  "succeeded": 1,
+  "failed": 1
+}</pre>
+      </div>
+      <p><code>results</code> keep the order of <code>urls</code>. Each has the <code>url</code> as sent, a <code>status</code> (<code>200</code> or the <a href="#errors">error</a> <code>/scrape</code> would return), and either a <code>result</code> shaped like a <a href="#response">/scrape response</a> or a <code>detail</code> message.</p>
+      <p class="callout"><b>Note</b> Every URL counts against your <a href="#rate-limits">rate limit</a>, and a batch that doesn't fit is refused whole with <code>429</code>. At most 4 URLs of one site are fetched at once, so batches that need the browser can take a few minutes.</p>
 
-const response = await fetch(
-  `https://ihabov-universal-scraper.fly.dev/scrape?${params}`,
-  { headers: { "X-API-Key": "YOUR_API_KEY" } },
-);
-if (!response.ok) throw new Error((await response.json()).detail);
+      {# ---- JSON mode ----------------------------------------------------------------------- #}
+      <h2 id="json">JSON mode</h2>
+      <p>With <code>mode=json</code>, pages on these sites come back as structured JSON. Other sites get <code>400</code> before anything is fetched. Click a site to see its real output.</p>
+      <div class="sites">
+        {% for site in sites %}
+        <details class="site-ex" name="site-example">
+          <summary class="site" data-host="{{ site.host }}">
+            <span class="badge" style="background: {{ site.color }}" aria-hidden="true">{{ site.host[0] | upper }}</span>
+            <span class="site-text"><b>{{ site.host }}</b><span>{{ site.label }}</span></span>
+            <span class="tag">{{ site.shape }}</span>
+          </summary>
+          <div class="ex">
+            <div class="ex-head">
+              <a class="ex-url" href="{{ site.example }}" target="_blank" rel="noopener noreferrer">{{ site.example }}</a>
+              <a class="tool" href="/app?url={{ site.example | urlencode }}&amp;mode=json">Open in the app</a>
+            </div>
+            {% if site.result %}
+            <pre class="code">{{ site.result.parsed | json }}</pre>
+            <p class="hint">Real output{% if site.result.fetched_with == "browser" %}, fetched with the headless browser{% endif %}, shortened for this page{% if site.result.total %}: the first {{ site.result.parsed | length }} of {{ site.result.total }} items{% endif %}. Long text and long lists are cut; the API returns everything.</p>
+            {% endif %}
+          </div>
+        </details>
+        {% endfor %}
+      </div>
 
-const data = await response.json();
-console.log(data.content);</pre><button class="tool copy" type="button" data-copy-target="code-js">Copy</button></div>
-
-      <h2 id="limits">Limits and behaviour</h2>
+      {# ---- Errors -------------------------------------------------------------------------- #}
+      <h2 id="errors">Errors</h2>
+      <p>Errors use standard status codes and a JSON body with a <code>detail</code> message, like <code>{"detail": "Invalid URL, only HTTP and HTTPS."}</code>.</p>
       <div class="tablewrap">
         <table>
-          <tr><th>What</th><th>Limit</th></tr>
-          <tr><td>Page size</td><td>5 MB</td></tr>
-          <tr><td>Timeout per request to the target site</td><td>10 seconds</td></tr>
-          <tr><td>Total time for the plain fetch</td><td>25 seconds, covering all retries, waits between them and redirect hops. After that the page counts as unreachable (<code>502</code>, or the browser with <code>browser=auto</code>).</td></tr>
-          <tr><td>Retries</td><td>Up to 3, with increasing waits, on timeouts and on <code>429</code>, <code>502</code>, <code>503</code>, <code>504</code> from the target site, as long as they fit in the 25 seconds</td></tr>
-          <tr><td>Redirects</td><td>Followed automatically, up to 5. Every hop is checked against the internal-address block.</td></tr>
-          <tr><td>Caching</td><td>A fetched page is kept for 10 minutes (30 seconds if the site returned an error) and shared by <code>mode=html</code> and <code>mode=json</code>, so asking for both fetches the page once. Separate per <code>browser</code> option.</td></tr>
-          <tr><td>Batches</td><td>Up to 50 URLs, 8 fetched at a time, at most 4 per site at once and started at least 0.25 seconds apart. Batch URLs wait up to 2 minutes for a free browser instead of 15 seconds.</td></tr>
-          <tr><td>Content types</td><td>HTML only (<code>text/html</code>, <code>application/xhtml+xml</code>)</td></tr>
-          <tr><td>Browser</td><td>Up to 2 at a time (a request waits up to 15 seconds for a free one, then gets <code>503</code>), 30 seconds to load the page, up to 20 seconds for a bot check to finish, and up to 5 seconds for scripts to finish rendering. Images, fonts and video are not loaded. Every request the browser makes is checked against the internal-address block, and redirect hops are checked after the page loads.</td></tr>
-          <tr><td>Sites that block</td><td>With <code>browser=auto</code>, a site that blocked a plain request is sent straight to the browser for the next 10 minutes. If the site passes a bot check in the browser, the resulting cookies are kept for 20 minutes for your key only, and later pages from that site are tried over plain HTTP with them first, which is much faster.</td></tr>
-          <tr><td>JSON mode in the browser</td><td>Stops as soon as the page contains the data, instead of waiting for everything else on the page to load.</td></tr>
+          <tr><th>Status</th><th>Meaning</th></tr>
+          <tr><td><code>400</code></td><td>Invalid URL or scheme, JSON on an unsupported site, or <code>browser=always</code> while the browser is off.</td></tr>
+          <tr><td><code>401</code></td><td>The API key is missing, wrong or revoked.</td></tr>
+          <tr><td><code>403</code></td><td>The URL points to a private or internal address.</td></tr>
+          <tr><td><code>413</code></td><td>The page is larger than 5 MB.</td></tr>
+          <tr><td><code>415</code></td><td>Not an HTML page, like a PDF, image or JSON file.</td></tr>
+          <tr><td><code>422</code></td><td>A parameter is missing or invalid; <code>detail</code> lists which.</td></tr>
+          <tr><td><code>429</code></td><td>Rate limit reached. The body has <code>error</code>; wait <code>Retry-After</code> seconds.</td></tr>
+          <tr><td><code>502</code></td><td>The site is down, timed out, blocked or redirected too often, or the JSON data wasn't on the page.</td></tr>
+          <tr><td><code>503</code></td><td>Every headless browser was busy for 15 seconds. Try again shortly.</td></tr>
         </table>
       </div>
-      <p><strong>First request after a quiet period:</strong> the server sleeps when idle, and waking it adds 2 to 5 seconds. Use a client timeout of at least 120 seconds: a slow site can use the whole 25-second fetch budget and then a full browser run on top.</p>
+
+      {# ---- Rate limits --------------------------------------------------------------------- #}
+      <h2 id="rate-limits">Rate limits</h2>
+      <ul>
+        <li><b>{{ user_limit | capitalize }}</b> per account, shared by all its keys and the web app, in a moving window (any 60 seconds).</li>
+        <li>Every URL counts, cache hits too: a batch of 5 uses 5. Your <a href="/dashboard">dashboard</a> shows what's left.</li>
+        <li>Requests with a missing or wrong key: {{ ip_limit }} per IP address. Over a limit you get <code>429</code> with <code>Retry-After</code>.</li>
+      </ul>
+      <div class="tablewrap">
+        <table>
+          <tr><th>Header on success</th><th>Meaning</th></tr>
+          <tr><td><code>X-RateLimit-Limit</code></td><td>Requests the window allows.</td></tr>
+          <tr><td><code>X-RateLimit-Remaining</code></td><td>Requests left right now.</td></tr>
+          <tr><td><code>X-RateLimit-Reset</code></td><td>Seconds until the window is completely free again.</td></tr>
+        </table>
+      </div>
+
+      {# ---- Good to know -------------------------------------------------------------------- #}
+      <h2 id="good-to-know">Good to know</h2>
+      <ul>
+        <li><b>Use a client timeout of at least 120 seconds.</b> A slow site can use the whole 25-second fetch and then a browser run.</li>
+        <li><b>HTML pages only,</b> up to 5 MB.</li>
+        <li><b>Results are cached for 10 minutes</b> (30 seconds for error pages), shared by both modes. Cached answers still count.</li>
+        <li><b>Redirects are followed,</b> up to 5, and every hop is checked against the internal-address block.</li>
+        <li><b>The first request after a quiet period</b> takes 2 to 5 seconds longer while the server wakes up.</li>
+      </ul>
+      <details class="more">
+        <summary>How fetching works</summary>
+        <ul>
+          <li><b>Plain fetch:</b> 10 seconds per request to the site, 25 seconds in total including retries, waits and redirects. Then the page counts as unreachable: <code>502</code>, or the browser with <code>browser=auto</code>.</li>
+          <li><b>Retries:</b> up to 3, with growing waits, on timeouts and on <code>429</code>, <code>502</code>, <code>503</code>, <code>504</code>, as long as they fit in the 25 seconds.</li>
+          <li><b>Browser:</b> up to 2 at a time; a request waits up to 15 seconds for one, then gets <code>503</code>. 30 seconds to load, up to 20 for a bot check, up to 5 for scripts. Images, fonts and video aren't loaded, and every request the browser makes is checked against the internal-address block.</li>
+          <li><b>JSON mode in the browser</b> stops as soon as the data is on the page.</li>
+          <li><b>Sites that block:</b> with <code>browser=auto</code>, a site that blocked a plain request goes straight to the browser for 10 minutes. Cookies from a passed bot check are kept for 20 minutes for your account only, and later pages are tried over plain HTTP with them first, which is much faster.</li>
+          <li><b>Cache:</b> separate per <code>browser</code> option, and shared by <code>mode=html</code> and <code>mode=json</code>, so asking for both fetches the page once.</li>
+          <li><b>Batches:</b> 8 URLs at a time, at most 4 per site, started at least 0.25 seconds apart. Batch URLs wait up to 2 minutes for a free browser instead of 15 seconds.</li>
+        </ul>
+      </details>
     </div>
   </div>
 </div>

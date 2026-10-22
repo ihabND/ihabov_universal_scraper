@@ -20,3 +20,12 @@ primary_region = 'ams'
   cpu_kind = 'shared'
   cpus = 1
   memory_mb = 1024
+
+# Accounts and API keys live in SQLite on this volume. Create it once with
+# `fly volumes create scraper_data -r ams -s 1`. A volume belongs to one machine.
+[mounts]
+  source = 'scraper_data'
+  destination = '/data'
+
+[env]
+  DATABASE_PATH = '/data/scraper.db'

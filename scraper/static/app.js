@@ -1,5 +1,6 @@
-/* Front end for both pages: copy buttons on the docs page, and the workbench on the
-   home page, which calls GET /scrape directly and renders the result. */
+/* Front end for every page: copy buttons on the docs and dashboard pages, confirmations on the
+   dashboard and account forms, and the workbench on the home page, which calls GET /scrape
+   directly and renders the result. */
 (function () {
   "use strict";
 
@@ -41,7 +42,7 @@
     setTimeout(() => URL.revokeObjectURL(link.href), 1000);
   }
 
-  // ---- Copy buttons on the docs page -------------------------------------------------------------
+  // ---- Copy buttons on the docs and dashboard pages ----------------------------------------------
   $$("[data-copy-target]").forEach((button) =>
     button.addEventListener("click", () => {
       const target = document.getElementById(button.dataset.copyTarget);
@@ -49,12 +50,67 @@
     })
   );
 
+  // ---- Forms that can't be undone (revoking a key, deleting the account) ask first -----------------
+  $$("form[data-confirm]").forEach((confirmForm) =>
+    confirmForm.addEventListener("submit", (event) => {
+      if (!window.confirm(confirmForm.dataset.confirm)) event.preventDefault();
+    })
+  );
+
+  // ---- Code cards on the docs page: tabs, and Copy copies the tab that is showing ----------------
+  $$("[data-tabs]").forEach((card) => {
+    const tabs = $$("[data-tab]", card);
+    const panels = $$("[data-panel]", card);
+    const show = (name) => {
+      tabs.forEach((tab) => tab.setAttribute("aria-selected", String(tab.dataset.tab === name)));
+      panels.forEach((panel) => (panel.hidden = panel.dataset.panel !== name));
+    };
+    tabs.forEach((tab) => tab.addEventListener("click", () => show(tab.dataset.tab)));
+    show(tabs[0].dataset.tab); // without JavaScript every panel stays visible
+    const copy = $("[data-copy-visible]", card);
+    if (copy) copy.addEventListener("click", () => copyText(panels.find((p) => !p.hidden).textContent, copy));
+  });
+
+  // ---- Docs sidebar: highlight the section being read -------------------------------------------
+  const sideLinks = $$(".docs .side a[href^='#']");
+  if (sideLinks.length) {
+    const sections = sideLinks.map((link) => document.getElementById(link.hash.slice(1)));
+    let current = null;
+    let queued = false;
+    const update = () => {
+      queued = false;
+      let active = sections[0];
+      sections.forEach((section) => { if (section.getBoundingClientRect().top < 140) active = section; });
+      // At the bottom of the page the last section counts, even if its heading can't reach the top.
+      if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) active = sections[sections.length - 1];
+      if (active === current) return;
+      current = active;
+      sideLinks.forEach((link) => {
+        if (link.hash === "#" + active.id) {
+          link.setAttribute("aria-current", "location");
+          // On phones the sidebar is a sideways strip: keep the highlighted link in view.
+          const strip = link.parentElement;
+          if (strip.scrollWidth > strip.clientWidth) strip.scrollTo({ left: link.offsetLeft - 20, behavior: "smooth" });
+        } else {
+          link.removeAttribute("aria-current");
+        }
+      });
+    };
+    window.addEventListener("scroll", () => { if (!queued) { queued = true; requestAnimationFrame(update); } }, { passive: true });
+    update();
+  }
+
+  // An API key saved by an older version of this page; scraping here now uses the login instead.
+  store.remove("scraper-key");
+
   const form = $("#scrape-form");
   if (!form) return; // everything below is the workbench on the home page
 
   // ---- Workbench state ---------------------------------------------------------------------------
   const urlInput = $("#url");
-  const keyInput = $("#key");
+  const csrfMeta = $('meta[name="csrf-token"]'); // only there when logged in
+  const csrfToken = csrfMeta ? csrfMeta.content : "";
+  const logIn = () => location.assign("/login?next=" + encodeURIComponent(location.pathname + location.search));
   const runButton = $("#run");
   const statusBar = $("#status");
   const tabBar = $("#tabs");
@@ -73,17 +129,6 @@
     if (input) input.checked = true;
     optionsChanged();
   }
-
-  // ---- API key, kept in this browser -------------------------------------------------------------
-  keyInput.value = store.get("scraper-key") || keyInput.value;
-  function paintKey() { $("#keyrow").classList.toggle("set", Boolean(keyInput.value.trim())); }
-  keyInput.addEventListener("input", () => {
-    const key = keyInput.value.trim();
-    key ? store.set("scraper-key", key) : store.remove("scraper-key");
-    paintKey();
-    renderSnippet();
-  });
-  paintKey();
 
   // ---- Options and the hint under them -----------------------------------------------------------
   function optionsChanged() {
@@ -186,13 +231,12 @@
   // ---- Running a scrape ----------------------------------------------------------------------------
   function run() {
     const url = urlInput.value.trim();
-    const key = keyInput.value.trim();
     if (!/^https?:\/\//i.test(url)) {
       return showError(400, "That is not a web address", "The URL has to start with http:// or https://.");
     }
-    if (!key) {
-      keyInput.focus();
-      return showError(401, "Add your API key first", "Paste it into the API key field. It is kept in this browser only.");
+    if (!csrfToken) {
+      return showError(401, "Log in to scrape", "Scraping needs an account. Signing up is free and takes a few seconds.",
+        { label: "Log in or sign up", run: logIn });
     }
     if (mode() === "json" && !jsonHosts.includes(hostOf(url))) {
       return showError(400, "JSON is not available for this site",
@@ -216,7 +260,7 @@
       if (elapsed) elapsed.textContent = seconds(performance.now() - started);
     }, 100);
 
-    fetch("/scrape?" + new URLSearchParams(request), { headers: { "X-API-Key": key }, signal: controller.signal })
+    fetch("/scrape?" + new URLSearchParams(request), { headers: { "X-CSRF-Token": csrfToken }, signal: controller.signal })
       .then(async (response) => {
         if (inFlight !== controller) return; // replaced by a newer scrape
         let body = null;
@@ -255,7 +299,7 @@
     const blocked = /bot protection|blocked/i.test(detail || "");
     const switchTo = (name, value, label) => ({ label, run: () => { setOption(name, value); run(); } });
     const known = {
-      401: ["The API key was rejected", { label: "Check the key", run: () => keyInput.focus() }],
+      401: ["You are logged out", { label: "Log in again", run: logIn }],
       400: [detail && detail.startsWith("JSON") ? "JSON is not available for this site" : "The scraper rejected the URL",
         request.mode === "json" ? switchTo("mode", "html", "Switch to HTML") : null],
       403: ["That address is not allowed", null],

@@ -4,7 +4,7 @@
 <div class="app">
   <aside class="left">
     {# A real form, so scraping also works without JavaScript; app.js takes over when it loads. #}
-    <form class="group" id="scrape-form" method="post" action="/">
+    <form class="group" id="scrape-form" method="post" action="/app">
       <h2>Request</h2>
       <label class="field"><span>URL</span>
         <input class="input" id="url" name="url" type="text" inputmode="url" spellcheck="false" autocomplete="off"
@@ -25,23 +25,18 @@
           </div>
         </fieldset>
       </div>
-      <div class="keypair">
-        <label class="field"><span>API key</span>
-          <span class="keyrow" id="keyrow">
-            <input class="input" id="key" name="api_key" type="password" autocomplete="off" placeholder="paste your key" value="{{ api_key or '' }}">
-            <i class="dot" aria-hidden="true"></i>
-          </span>
-        </label>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <div class="actions">
+        <p class="hint" id="hint">Auto tries a plain request first and opens a browser only if the site blocks it.</p>
         <button class="run" id="run" type="submit">Scrape <kbd>Ctrl ↵</kbd></button>
       </div>
-      <p class="hint" id="hint">Auto tries a plain request first and opens a browser only if the site blocks it. The key stays in this browser.</p>
     </form>
 
     <section class="group">
       <h2>Supported sites <span class="tag">JSON</span></h2>
       <div class="sites">
         {% for site in sites %}
-        <a class="site" href="/?url={{ site.example | urlencode }}&amp;mode=json" data-example="{{ site.example }}" data-host="{{ site.host }}">
+        <a class="site" href="/app?url={{ site.example | urlencode }}&amp;mode=json" data-example="{{ site.example }}" data-host="{{ site.host }}">
           <span class="badge" style="background: {{ site.color }}" aria-hidden="true">{{ site.host[0] | upper }}</span>
           <span class="site-text"><b>{{ site.host }}</b><span>{{ site.label }}</span></span>
           <span class="tag">{{ site.shape }}</span>

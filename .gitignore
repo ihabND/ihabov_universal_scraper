@@ -15,3 +15,9 @@ venv/
 *.egg-info/
 build/
 dist/
+
+# Local database (accounts and API keys)
+data/
+*.db
+*.db-wal
+*.db-shm

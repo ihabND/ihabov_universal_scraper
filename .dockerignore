@@ -12,3 +12,4 @@ examples/
 dontdelete.txt
 tests/
 .pytest_cache/
+data/

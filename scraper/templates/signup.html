@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% set page = "signup" %}
+{% block title %}Sign up · Ihabov Scraper{% endblock %}
+{% block content %}
+<div class="page auth">
+  <form class="card" method="post" action="/signup">
+    <h1>Create an account</h1>
+    <p class="hint">Free. You get up to {{ max_keys }} API keys and {{ user_limit }}.</p>
+    {% if error %}<p class="notice bad" role="alert">{{ error }}</p>{% endif %}
+    <label class="field"><span>Email</span>
+      <input class="input" name="email" type="email" autocomplete="email" required value="{{ email }}" autofocus>
+    </label>
+    <label class="field"><span>Password</span>
+      <input class="input" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+    </label>
+    <label class="field"><span>Repeat the password</span>
+      <input class="input" name="confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+    </label>
+    <p class="hint">At least 8 characters. There's no password reset yet, so keep it somewhere safe.</p>
+    <button class="run" type="submit">Sign up</button>
+    <p class="hint">Already have an account? <a href="/login">Log in</a></p>
+  </form>
+</div>
+{% endblock %}

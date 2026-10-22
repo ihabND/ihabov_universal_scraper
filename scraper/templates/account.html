@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Account · Ihabov Scraper{% endblock %}
+{% block content %}
+<div class="page dash">
+  <header class="dash-head">
+    <span class="eyebrow">Account</span>
+    <h1>{{ user.email }}</h1>
+    <p class="hint">Member since {{ user.created_at | time }}</p>
+  </header>
+
+  {% if message %}<p class="notice good" role="status">{{ message }}</p>{% endif %}
+  {% if error %}<p class="notice bad" role="alert">{{ error }}</p>{% endif %}
+
+  <section class="card">
+    <h2>Change password</h2>
+    <form class="stack" method="post" action="/account/password">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="username" autocomplete="username" value="{{ user.email }}">
+      <label class="field"><span>Current password</span>
+        <input class="input" name="current" type="password" autocomplete="current-password" required>
+      </label>
+      <label class="field"><span>New password</span>
+        <input class="input" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+      </label>
+      <label class="field"><span>Repeat the new password</span>
+        <input class="input" name="confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+      </label>
+      <div><button class="run" type="submit">Change password</button></div>
+      <p class="hint">Every other device you're logged in on is logged out.</p>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>Log out</h2>
+    <form method="post" action="/logout">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <button class="tool" type="submit">Log out of this browser</button>
+    </form>
+  </section>
+
+  <section class="card danger-zone">
+    <h2>Delete account</h2>
+    <p>Deletes your account, your API keys and your usage history. Programs using your keys stop working right away. This can't be undone.</p>
+    <form class="stack" method="post" action="/account/delete" data-confirm="Delete your account and all of its API keys? This can't be undone.">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="field"><span>Your password</span>
+        <input class="input" name="password" type="password" autocomplete="current-password" required>
+      </label>
+      <div><button class="run danger" type="submit">Delete my account</button></div>
+    </form>
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · Ihabov Scraper{% endblock %}
+{% block content %}
+<div class="page dash">
+  <header class="dash-head">
+    <span class="eyebrow">Dashboard</span>
+    <h1>API keys and usage</h1>
+    <p class="hint">Signed in as {{ user.email }}</p>
+  </header>
+
+  {% if new_key %}
+  <section class="card reveal" role="status">
+    <h2>Your new key</h2>
+    <p>Copy it now and keep it somewhere safe. It is shown only this once.</p>
+    <div class="codeblock"><pre class="code" id="new-key">{{ new_key }}</pre><button class="tool copy" type="button" data-copy-target="new-key">Copy</button></div>
+  </section>
+  {% endif %}
+  {% if error %}<p class="notice bad" role="alert">{{ error }}</p>{% endif %}
+
+  <section class="card">
+    <h2>Usage</h2>
+    <div class="stats">
+      <div class="stat"><b>{{ usage.remaining }}<small> / {{ usage.limit.amount }}</small></b>
+        <span>{% if resets_in %}left right now, all back within {{ resets_in }} s{% else %}left right now{% endif %}</span></div>
+      <div class="stat"><b>{{ days[-1][1] }}</b><span>requests today (UTC)</span></div>
+      <div class="stat"><b>{{ total }}</b><span>requests in total</span></div>
+    </div>
+    <div class="bars" aria-label="Requests per day, last 7 days">
+      {% for day, count in days %}
+      <div class="bar" title="{{ day }}: {{ count }} requests">
+        <span class="n">{{ count }}</span>
+        <i{% if not count %} class="zero"{% endif %} style="height:{{ (count / peak * 100) | round(0, 'ceil') }}%"></i>
+        <span class="d">{{ day[5:] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="hint">Your limit is {{ user_limit }}, shared by all your keys and the website. Every URL counts, so a batch of 5 URLs uses 5.</p>
+  </section>
+
+  <section class="card">
+    <h2>API keys <span class="tag">{{ keys | length }} of {{ max_keys }}</span></h2>
+    {% if keys %}
+    <div class="tablewrap">
+      <table class="keys">
+        <tr><th>Name</th><th>Key</th><th>Created</th><th>Last used</th><th class="num">Requests</th><th></th></tr>
+        {% for key in keys %}
+        <tr>
+          <td>{{ key.name }}</td>
+          <td><code>{{ key.prefix }}…</code></td>
+          <td>{{ key.created_at | time }}</td>
+          <td>{{ key.last_used_at | time }}</td>
+          <td class="num">{{ key.requests }}</td>
+          <td class="num">
+            <form method="post" action="/dashboard/keys/{{ key.id }}/revoke" data-confirm="Revoke “{{ key.name }}”? Programs using it stop working right away.">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <button class="tool danger" type="submit">Revoke</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% else %}
+    <p class="hint">No keys yet. Create one to call the API from your own code.</p>
+    {% endif %}
+
+    {% if keys | length < max_keys %}
+    <form class="newkey" method="post" action="/dashboard/keys">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label class="field"><span>Name</span>
+        <input class="input" name="name" maxlength="40" placeholder="e.g. laptop, price tracker" autocomplete="off">
+      </label>
+      <button class="run" type="submit">Create key</button>
+    </form>
+    {% else %}
+    <p class="hint">You have {{ max_keys }} keys, the most an account can have. Revoke one to make a new one.</p>
+    {% endif %}
+    <p class="hint">Send the key in the <code>X-API-Key</code> header. See the <a href="/docs#authentication">API docs</a>.</p>
+  </section>
+</div>
+{% endblock %}

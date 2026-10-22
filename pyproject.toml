@@ -20,7 +20,7 @@ dev = ["ruff==0.16.10", "pytest==9.1.1", "fakeredis==2.39.0", "httpx2==2.13.1"]
 packages = ["scraper"]
 
 [tool.setuptools.package-data]
-scraper = ["templates/*.html", "static/*"]
+scraper = ["templates/*.html", "static/*", "examples.json"]
 
 [tool.setuptools.dynamic]
 dependencies = { file = ["requirements.txt"] }

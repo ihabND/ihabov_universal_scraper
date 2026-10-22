@@ -6,8 +6,6 @@ import pytest
 from scraper import cache, service
 from scraper.page import Page
 
-KEY = {"X-API-Key": "test-key"}  # one of the keys set in conftest.py
-
 URL = "https://quotes.toscrape.com/page/2/"
 PAGE = b'<div class="quote"><span class="text">Hi</span><small class="author">Ann</small></div>'
 
@@ -47,10 +45,10 @@ def test_error_pages_expire_quickly(redis):
     assert 0 < cache.redis_client.ttl(cache.page_key(URL, "auto")) <= 30
 
 
-def test_json_and_html_share_one_fetch(redis, client, fetched):
-    assert client.get("/scrape", params={"url": URL, "mode": "json"}, headers=KEY).status_code == 200
-    assert client.get("/scrape", params={"url": URL, "mode": "html"}, headers=KEY).status_code == 200
-    assert client.get("/scrape", params={"url": URL, "mode": "json"}, headers=KEY).status_code == 200
+def test_json_and_html_share_one_fetch(redis, client, fetched, key):
+    assert client.get("/scrape", params={"url": URL, "mode": "json"}, headers=key).status_code == 200
+    assert client.get("/scrape", params={"url": URL, "mode": "html"}, headers=key).status_code == 200
+    assert client.get("/scrape", params={"url": URL, "mode": "json"}, headers=key).status_code == 200
     assert fetched == [URL]
 
 
@@ -60,7 +58,7 @@ def test_a_cut_short_browser_page_is_not_reused_for_html(redis):
     assert service.cached_page(URL, "auto", "html") is None
 
 
-def test_scraping_still_works_when_redis_is_down(redis, client, fetched):
+def test_scraping_still_works_when_redis_is_down(redis, client, fetched, key):
     redis.connected = False
-    assert client.get("/scrape", params={"url": URL}, headers=KEY).status_code == 200
+    assert client.get("/scrape", params={"url": URL}, headers=key).status_code == 200
     assert client.get("/health").json()["redis"] == "paused"

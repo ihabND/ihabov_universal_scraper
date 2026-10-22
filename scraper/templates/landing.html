@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+{% block title %}Ihabov Universal Scraper · Any web page as HTML or JSON{% endblock %}
+{% block content %}
+<div class="page landing">
+  <section class="hero">
+    <div class="hero-text">
+      <span class="eyebrow">Web scraping API</span>
+      <h1>Any web page, as clean HTML or structured JSON.</h1>
+      <p class="lede">One call fetches the page with a real browser's network fingerprint, switches to a headless browser when a site blocks plain requests, and gives you the formatted HTML, or the page's data as JSON on supported sites.</p>
+      <div class="cta-row">
+        <a class="run" href="/signup">Get a free API key</a>
+        <a class="tool" href="/docs">Read the docs</a>
+      </div>
+      <p class="hint">Free account: {{ max_keys }} API keys and {{ user_limit }}. Already have one? <a href="/login">Log in</a></p>
+    </div>
+    <div class="hero-code" aria-label="Example request and response">
+      <div class="code-head"><span class="method">GET</span>/scrape<span class="tag">mode=json</span></div>
+<pre class="code"><span class="z">$</span> curl -H <span class="s">"X-API-Key: sk_…"</span> \
+  <span class="s">"https://ihabov-universal-scraper.fly.dev/scrape?url=https://scrapeme.live/shop/Bulbasaur/&amp;mode=json"</span>
+
+{
+  <span class="k">"url"</span>: <span class="s">"https://scrapeme.live/shop/Bulbasaur/"</span>,
+  <span class="k">"status_code"</span>: <span class="n">200</span>,
+  <span class="k">"ok"</span>: <span class="b">true</span>,
+  <span class="k">"fetched_with"</span>: <span class="s">"http"</span>,
+  <span class="k">"parsed"</span>: {
+    <span class="k">"name"</span>: <span class="s">"Bulbasaur"</span>,
+    <span class="k">"price"</span>: <span class="n">63.0</span>,
+    <span class="k">"sku"</span>: <span class="s">"4391"</span>,
+    <span class="k">"categories"</span>: [<span class="s">"Pokemon"</span>, <span class="s">"Seed"</span>],
+    <span class="k">"stock"</span>: <span class="n">45</span>
+  }
+}</pre>
+    </div>
+  </section>
+
+  <section class="plan" aria-labelledby="plan-title">
+    <div class="plan-intro">
+      <span class="eyebrow">Free account</span>
+      <h2 id="plan-title">Start scraping in a minute.</h2>
+      <p>Sign up with an email and a password, create a key on your dashboard, and make your first call. No card needed.</p>
+      <a class="run" href="/signup">Create your account</a>
+      <p class="hint">Already have one? <a href="/login">Log in</a></p>
+    </div>
+    <ul class="perks">
+      <li>
+        <span class="perk-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m8 7-5 5 5 5M16 7l5 5-5 5"/></svg></span>
+        <b>Any page as HTML or JSON</b>
+        <span>Any public URL comes back as formatted HTML, and pages on {{ sites | length }} sites as ready-to-use JSON. Redirects are checked hop by hop and internal addresses are blocked.</span>
+      </li>
+      <li>
+        <span class="perk-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.7 12.3 20 3M16.5 6.5l3 3M14 9l2 2"/></svg></span>
+        <b>{{ max_keys }} API keys, {{ user_limit }}</b>
+        <span>One key per program, each revocable on its own. The limit is shared by your keys and the web app, and your dashboard shows what's left and your daily usage.</span>
+      </li>
+      <li>
+        <span class="perk-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3-9 5 9 5 9-5-9-5zM3 13l9 5 9-5"/></svg></span>
+        <b>Batches</b>
+        <span>Send many URLs in a single call. Every URL gets its own status, so one that fails is reported right next to it and the rest of the batch still comes back.</span>
+      </li>
+      <li>
+        <span class="perk-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg></span>
+        <b>The web app</b>
+        <span>Try any page before you write code. Lists open as a sortable table you can download as CSV, next to a JSON tree and ready-to-copy code snippets.</span>
+      </li>
+    </ul>
+  </section>
+
+  <section class="card" id="sites">
+    <h2>Supported sites <span class="tag">JSON</span></h2>
+    <div class="sites">
+      {% for site in sites %}
+      {# One open at a time (name=…); an open site spans the full width so its JSON has room. #}
+      <details class="site-ex" name="site-example">
+        <summary class="site" data-host="{{ site.host }}">
+          <span class="badge" style="background: {{ site.color }}" aria-hidden="true">{{ site.host[0] | upper }}</span>
+          <span class="site-text"><b>{{ site.host }}</b><span>{{ site.label }}</span></span>
+          <span class="tag">{{ site.shape }}</span>
+        </summary>
+        <div class="ex">
+          <div class="ex-head">
+            <a class="ex-url" href="{{ site.example }}" target="_blank" rel="noopener noreferrer">{{ site.example }}</a>
+            <a class="tool" href="/app?url={{ site.example | urlencode }}&amp;mode=json">Open in the app</a>
+          </div>
+          {% if site.result %}
+          <pre class="code">{{ site.result.parsed | json }}</pre>
+          <p class="hint">Real output{% if site.result.fetched_with == "browser" %}, fetched with the headless browser{% endif %}, shortened for this page{% if site.result.total %}: the first {{ site.result.parsed | length }} of {{ site.result.total }} items{% endif %}. Long text and long lists are cut; the API returns everything.</p>
+          {% endif %}
+        </div>
+      </details>
+      {% endfor %}
+    </div>
+    <p class="hint">Click a site to see what its JSON looks like. Every other site works too, as HTML.</p>
+  </section>
+
+  <footer class="foot">
+    <span>Ihabov Universal Scraper</span>
+    <a href="/docs">API docs</a>
+    <a href="/login">Log in</a>
+    <a href="/signup">Sign up</a>
+  </footer>
+</div>
+{% endblock %}

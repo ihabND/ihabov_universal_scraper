@@ -1,0 +1,240 @@
+{
+  "webscraper.io": {
+    "example": "https://webscraper.io/test-sites/product/bmw-e24-635csi-1954-c002",
+    "url": "https://webscraper.io/test-sites/product/bmw-e24-635csi-1954-c002",
+    "fetched_with": "http",
+    "total": null,
+    "parsed": {
+      "brand": "BMW",
+      "model": "E24 635CSi",
+      "year": 1954,
+      "engine": "I4",
+      "drivetrain": "RWD",
+      "power_hp": 122,
+      "country": "Germany",
+      "mileage_km": 189886,
+      "condition": "Driver",
+      "exterior_color": "Silver",
+      "interior_color": "Red",
+      "body": "Hatchback",
+      "price_eur": 18457,
+      "availability": "Reserved",
+      "rating": 3,
+      "seller": "Classic Car Garage",
+      "transmission": [
+        "Manual",
+        "Semi-automatic",
+        "Automatic"
+      ],
+      "tags": [
+        "Restored",
+        "Rare",
+        "Classic",
+        "German"
+      ],
+      "colors": [
+        "Red",
+        "Black",
+        "Silver",
+        "Blue"
+      ],
+      "image": "https://webscraper.io/images/test-sites-cars/BMW-E24-635CSi-1954-1.avif"
+    }
+  },
+  "scrapeme.live": {
+    "example": "https://scrapeme.live/shop/Bulbasaur/",
+    "url": "https://scrapeme.live/shop/Bulbasaur/",
+    "fetched_with": "http",
+    "total": null,
+    "parsed": {
+      "name": "Bulbasaur",
+      "price": 63.0,
+      "description": "Bulbasaur can be seen napping in bright sunlight. There is a seed on its back. By soaking…",
+      "sku": "4391",
+      "categories": [
+        "Pokemon",
+        "Seed"
+      ],
+      "tags": [
+        "bulbasaur",
+        "Overgrow",
+        "Seed"
+      ],
+      "stock": 45
+    }
+  },
+  "books.toscrape.com": {
+    "example": "https://books.toscrape.com/catalogue/page-2.html",
+    "url": "https://books.toscrape.com/catalogue/page-2.html",
+    "fetched_with": "http",
+    "total": 20,
+    "parsed": [
+      {
+        "title": "In Her Wake",
+        "price": 12.84,
+        "stock": "In stock",
+        "rating": 1,
+        "url": "https://books.toscrape.com/catalogue/in-her-wake_980/index.html"
+      },
+      {
+        "title": "How Music Works",
+        "price": 37.32,
+        "stock": "In stock",
+        "rating": 2,
+        "url": "https://books.toscrape.com/catalogue/how-music-works_979/index.html"
+      }
+    ]
+  },
+  "quotes.toscrape.com": {
+    "example": "https://quotes.toscrape.com/page/2/",
+    "url": "https://quotes.toscrape.com/page/2/",
+    "fetched_with": "http",
+    "total": 10,
+    "parsed": [
+      {
+        "quote": "This life is what you make it. No matter what, you're going to mess up sometimes, it's a…",
+        "author": "Marilyn Monroe",
+        "tags": [
+          "friends",
+          "heartbreak",
+          "inspirational",
+          "life"
+        ]
+      },
+      {
+        "quote": "It takes a great deal of bravery to stand up to our enemies, but just as much to stand up…",
+        "author": "J.K. Rowling",
+        "tags": [
+          "courage",
+          "friends"
+        ]
+      }
+    ]
+  },
+  "knjizare-vulkan.rs": {
+    "example": "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava",
+    "url": "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava",
+    "fetched_with": "http",
+    "total": null,
+    "parsed": {
+      "name": "TVRĐAVA",
+      "publisher": "VULKAN IZDAVAŠTVO",
+      "price": 799.2,
+      "currency": "RSD",
+      "isbn": "9788610009736",
+      "sku": "274805",
+      "product_id": "25486",
+      "description": "„Troje nas je, u cijelom svijetu samo troje: moji prsti, njeno tijelo i njegov ujednačeni…",
+      "image": "https://www.knjizare-vulkan.rs/files/images/slike_proizvoda/274805.jpg.webp",
+      "url": "https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava"
+    }
+  },
+  "iponcomp.com": {
+    "example": "https://iponcomp.com/shop/product/valueline-usb-32-gen-1-hub-4-ports-type-c-connection-cable/1871163",
+    "url": "https://iponcomp.com/shop/product/valueline-usb-32-gen-1-hub-4-ports-type-c-connection-cable/1871163",
+    "fetched_with": "http",
+    "total": null,
+    "parsed": {
+      "name": "VALUELINE USB 3.2 Gen 1 Hub 4 Ports Type C Connection Cable",
+      "brand": "VALUELINE",
+      "price": 15490.0,
+      "currency": "HUF",
+      "availability": "InStock",
+      "shipping_price": 1990,
+      "category": "USB HUB",
+      "sku": 1871163,
+      "mpn": "14.99.5038-10",
+      "ean": "7630049617711",
+      "description": "4 portos USB 3.0 HUB USB 3.0 Type C csatlakozással, PD töltési lehetőséggel.",
+      "image": "https://media.icdn.hu/product/2020-10/656295/1525175_valueline_usb_32_gen_1_hub_4_ports_t…",
+      "url": "https://iponcomp.com/shop/product/valueline-usb-32-gen-1-hub-4-ports-type-c-connection-ca…"
+    }
+  },
+  "allrecipes.com": {
+    "example": "https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies/",
+    "url": "https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies/",
+    "fetched_with": "http",
+    "total": null,
+    "parsed": {
+      "name": "Best Chocolate Chip Cookies",
+      "description": "This classic chocolate chip cookie recipe makes deliciously buttery cookies with crisp ed…",
+      "author": [
+        "Dora"
+      ],
+      "rating": 4.6,
+      "rating_count": 19331,
+      "prep_minutes": 20,
+      "cook_minutes": 10,
+      "total_minutes": 30,
+      "yield": "4 dozen cookies",
+      "categories": [
+        "Dessert"
+      ],
+      "cuisine": [
+        "American"
+      ],
+      "ingredients": [
+        "1 cup butter, softened",
+        "1 cup white sugar",
+        "1 cup packed brown sugar",
+        "2 eggs"
+      ],
+      "instructions": [
+        "Gather your ingredients, making sure your butter is softened, and your eggs are room temp…",
+        "Preheat the oven to 350 degrees F (175 degrees C). Beat butter, white sugar, and brown su…",
+        "Beat in eggs, one at a time, then stir in vanilla.",
+        "Dissolve baking soda in hot water; add to batter along with salt and mix until combined."
+      ],
+      "nutrition": {
+        "calories": "146 kcal",
+        "carbohydrateContent": "19 g",
+        "cholesterolContent": "10 mg",
+        "fiberContent": "1 g"
+      },
+      "image": "https://www.allrecipes.com/thmb/8xwaWAHtl_QLij6D-G0Z4B1HDVA=/1500x0/filters:no_upscale():…",
+      "date_published": "1998-04-18"
+    }
+  },
+  "imdb.com": {
+    "example": "https://www.imdb.com/title/tt0111161/",
+    "url": "https://www.imdb.com/title/tt0111161/",
+    "fetched_with": "browser",
+    "total": null,
+    "parsed": {
+      "title": "The Shawshank Redemption",
+      "alternate_title": null,
+      "type": "Movie",
+      "year": 1994,
+      "date_published": "1994-10-14",
+      "content_rating": "R",
+      "genres": [
+        "Drama"
+      ],
+      "rating": 9.3,
+      "rating_count": 3256153,
+      "runtime_minutes": 142,
+      "directors": [
+        "Frank Darabont"
+      ],
+      "writers": [
+        "Stephen King",
+        "Frank Darabont"
+      ],
+      "actors": [
+        "Tim Robbins",
+        "Morgan Freeman",
+        "Bob Gunton"
+      ],
+      "keywords": [
+        "prison",
+        "based on the works of stephen king",
+        "escape from prison",
+        "friendship between men"
+      ],
+      "description": "After a banker is sentenced to life in Shawshank Prison, he forms an unlikely friendship…",
+      "poster": "https://m.media-amazon.com/images/M/MV5BMDAyY2FhYjctNDc5OS00MDNlLThiMGUtY2UxYWVkNGY2ZjljX…",
+      "trailer": "https://www.imdb.com/video/vi3877612057/",
+      "url": "https://www.imdb.com/title/tt0111161/"
+    }
+  }
+}

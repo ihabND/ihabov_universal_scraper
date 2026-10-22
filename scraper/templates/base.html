@@ -10,13 +10,23 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="{{ asset_url('app.css') }}">
+  {% if user %}<meta name="csrf-token" content="{{ csrf_token }}">{% endif %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
-  <header class="topbar">
-    <a class="mark" href="/"><i aria-hidden="true">~</i>Ihabov Scraper<small>v1</small></a>
+  <header class="topbar{% if user %} signed-in{% endif %}">
+    <a class="mark" href="{{ '/app' if user else '/' }}"><i aria-hidden="true">~</i><span class="name">Ihabov Scraper</span><small>v1</small></a>
     <nav>
-      <a class="hide-sm" href="/docs#json">Supported sites</a>
+      {% if page == "landing" %}<a class="hide-sm" href="#sites">Supported sites</a>{% endif %}
       <a href="/docs" {% if page == "docs" %}aria-current="page"{% endif %}>API docs</a>
+      {% if user %}
+      <a href="/app" {% if page == "app" %}aria-current="page"{% endif %}>App</a>
+      <a href="/dashboard" {% if page == "dashboard" %}aria-current="page"{% endif %}>Dashboard</a>
+      <a href="/account" {% if page == "account" %}aria-current="page"{% endif %}>Account</a>
+      <form method="post" action="/logout"><input type="hidden" name="csrf_token" value="{{ csrf_token }}"><button type="submit">Log out</button></form>
+      {% else %}
+      <a href="/login" {% if page == "login" %}aria-current="page"{% endif %}>Log in</a>
+      <a class="cta" href="/signup">Sign up</a>
+      {% endif %}
     </nav>
   </header>
   {% block content %}{% endblock %}

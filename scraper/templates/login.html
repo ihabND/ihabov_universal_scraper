@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% set page = "login" %}
+{% block title %}Log in · Ihabov Scraper{% endblock %}
+{% block content %}
+<div class="page auth">
+  <form class="card" method="post" action="/login">
+    <h1>Log in</h1>
+    {% if error %}<p class="notice bad" role="alert">{{ error }}</p>{% endif %}
+    <input type="hidden" name="next" value="{{ next }}">
+    <label class="field"><span>Email</span>
+      <input class="input" name="email" type="email" autocomplete="email" required value="{{ email }}" autofocus>
+    </label>
+    <label class="field"><span>Password</span>
+      <input class="input" name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button class="run" type="submit">Log in</button>
+    <p class="hint">No account yet? <a href="/signup">Sign up</a></p>
+  </form>
+</div>
+{% endblock %}
