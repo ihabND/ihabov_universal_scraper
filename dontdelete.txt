@@ -1,2 +1,0 @@
-  $env:API_KEYS = "devkey"
-  uvicorn main:app --reload
