@@ -5,6 +5,7 @@ import os
 # Settings are read when the modules are imported, so they are set before anything from scraper loads.
 os.environ["API_KEYS"] = "test-key,other-key"
 os.environ.pop("REDIS_URL", None)  # tests that need Redis bring an in-memory fake
+os.environ.pop("PROXY_URL", None)  # tests never go out through a real proxy
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402

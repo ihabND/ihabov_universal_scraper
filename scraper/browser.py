@@ -23,6 +23,7 @@ from .errors import (
 )
 from .http_fetch import HTML_CONTENT_TYPES, MAX_CONTENT_BYTES, MAX_REDIRECTS
 from .page import Page
+from .proxy import PROXY_URL, playwright_proxy
 from .urls import site_of, validate_host, validate_url
 
 BROWSER_ENABLED = os.environ.get("BROWSER_FALLBACK", "on").lower() != "off"
@@ -73,6 +74,7 @@ def get_browser():
         browser_local.browser = browser_local.playwright.chromium.launch(
             channel="chromium",
             headless=True,
+            proxy=playwright_proxy(PROXY_URL),
             # Without this Chromium sets navigator.webdriver = true, which bot checks look for.
             args=["--disable-blink-features=AutomationControlled"],
         )

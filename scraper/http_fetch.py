@@ -12,6 +12,7 @@ from curl_cffi.requests.exceptions import RequestException
 from .blocking import Clearance
 from .errors import ContentTooLargeError, FetchError, ScrapeError, UnsupportedContentError
 from .page import Page
+from .proxy import PROXY_URL
 from .urls import validate_url
 
 REQUEST_TIMEOUT = 10
@@ -55,6 +56,7 @@ def http_session() -> requests.Session:
     if session is None:
         session = requests.Session(
             impersonate="chrome",
+            proxy=PROXY_URL,  # None sends requests out directly
             # The same limits the streaming version had: 10 s to connect, and a connection that
             # sends nothing for 10 s counts as stalled. The total per request is the fetch budget.
             curl_options={

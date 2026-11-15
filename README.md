@@ -48,6 +48,8 @@ uvicorn main:app --reload
 
 Set `REDIS_URL` to turn on shared caching and quotas. Without it, the app runs on in-memory counters.
 
+Set `PROXY_URL` (`http://user:password@host:port`) to send both plain HTTP and browser requests out through a proxy. Data-center IPs, like a hosted server's, are often blocked, and a residential proxy usually gets through. `/health` shows whether a proxy is on.
+
 **Docker / Fly.io**: the multi-stage `Dockerfile` installs Chromium into a fixed path, and `fly.toml` deploys it with scale-to-zero. API keys are set with `fly secrets set API_KEYS=...` (see [`docs/api-keys.md`](docs/api-keys.md)).
 
 **Tests** (offline, no network or Redis needed):
@@ -67,6 +69,7 @@ scraper/
   browser.py     Playwright Chromium fetches, queued
   blocking.py    bot-check detection, clearance-cookie reuse
   parsers.py     per-site structured parsers
+  proxy.py       optional outgoing proxy for both fetch paths
   urls.py        URL normalisation and SSRF guard
   cache.py       Redis cache with graceful fallback
   quota.py       per-IP and per-key limits

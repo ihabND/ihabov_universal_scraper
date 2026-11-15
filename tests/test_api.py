@@ -25,7 +25,7 @@ def fetched(monkeypatch):
 
 
 def test_health_needs_no_key(client):
-    assert client.get("/health").json() == {"status": "ok", "redis": "off", "browser": "on"}
+    assert client.get("/health").json() == {"status": "ok", "redis": "off", "browser": "on", "proxy": "off"}
 
 
 def test_wrong_keys_are_rejected_and_limited_per_ip(client):

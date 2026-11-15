@@ -16,6 +16,7 @@ from .auth import api_key_header, is_valid_key
 from .browser import BROWSER_ENABLED
 from .errors import ScrapeError
 from .parsers import PARSERS
+from .proxy import proxy_status
 from .quota import key_id, take_ip, take_key
 from .schemas import BatchRequest, BatchResponse, BrowserOption, Mode, ScrapeResponse
 from .service import run_batch, scrape
@@ -93,7 +94,12 @@ def authorize(request: Request, api_key: str | None, cost: int = 1) -> str:
 def health() -> dict:
     """For uptime monitors and the hosting platform. Needs no key and never scrapes anything.
     The app works without Redis (just without the cache), so a Redis problem is reported, not fatal."""
-    return {"status": "ok", "redis": cache.redis_status(), "browser": "on" if BROWSER_ENABLED else "off"}
+    return {
+        "status": "ok",
+        "redis": cache.redis_status(),
+        "browser": "on" if BROWSER_ENABLED else "off",
+        "proxy": proxy_status(),
+    }
 
 
 # ---- API -------------------------------------------------------------------------------------
