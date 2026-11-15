@@ -2,7 +2,11 @@
 
 A web-scraping API: send it any public URL and get back clean HTML, or structured JSON for supported sites. Plain HTTP is tried first, and it falls back to a headless Chromium browser when a site's bot protection blocks plain requests.
 
-![Python](https://img.shields.io/badge/python-3.12-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-009688) ![Redis](https://img.shields.io/badge/Redis-cache%20%26%20quotas-DC382D) ![tests](https://img.shields.io/badge/tests-53%20passing-brightgreen) ![license](https://img.shields.io/badge/license-MIT-lightgrey)
+[![tests](https://github.com/ihabND/ihabov_universal_scraper/actions/workflows/tests.yml/badge.svg)](https://github.com/ihabND/ihabov_universal_scraper/actions/workflows/tests.yml) ![Python](https://img.shields.io/badge/python-3.12-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-009688) ![Redis](https://img.shields.io/badge/Redis-cache%20%26%20quotas-DC382D) ![license](https://img.shields.io/badge/license-MIT-lightgrey)
+
+![The web workbench scraping a book listing into a sortable table](docs/images/demo.gif)
+
+**Live demo: [ihabov-universal-scraper.fly.dev](https://ihabov-universal-scraper.fly.dev)** (the API docs are open; scraping needs an API key, which I hand out on request). The server scales to zero when idle, so the first request after a quiet spell takes a few seconds while it starts.
 
 ## Features
 
