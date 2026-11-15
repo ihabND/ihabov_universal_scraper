@@ -1,4 +1,16 @@
-from scraper.proxy import playwright_proxy
+from scraper.proxy import playwright_proxy, with_scheme
+
+
+def test_missing_scheme_defaults_to_http():
+    url = with_scheme("login__cr.rs:secret@gw.dataimpulse.com:823")
+    assert url == "http://login__cr.rs:secret@gw.dataimpulse.com:823"
+    assert playwright_proxy(url) == {
+        "server": "http://gw.dataimpulse.com:823",
+        "username": "login__cr.rs",
+        "password": "secret",
+    }
+    assert with_scheme("socks5://proxy.example.com:1080") == "socks5://proxy.example.com:1080"
+    assert with_scheme("") is None
 
 
 def test_no_proxy_configured():
