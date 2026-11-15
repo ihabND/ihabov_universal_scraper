@@ -12,6 +12,7 @@ and is never logged or returned by the API.
 import os
 from urllib.parse import unquote, urlsplit
 
+
 def with_scheme(url: str | None) -> str | None:
     """Providers often show the proxy without a scheme (user:pass@host:port). Without one, the URL
     can't be split into credentials and host, so plain http:// is assumed, as curl itself does."""
