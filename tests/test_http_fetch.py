@@ -102,3 +102,10 @@ def test_retries_temporary_errors(site):
 def test_cookies_stay_within_one_fetch(site):
     assert b"cookie=s=1" in fetch_page(site + "/set-cookie").content  # kept along its own redirect chain
     assert b"cookie=None" in fetch_page(site + "/echo").content  # never sent on the next fetch
+
+
+def test_every_redirect_hop_chooses_its_own_proxy(site, monkeypatch):
+    asked = []
+    monkeypatch.setattr(http_fetch, "proxy_for", lambda url: asked.append(url) or None)
+    fetch_page(f"{site}/redirect")
+    assert asked == [f"{site}/redirect", f"{site}/ok"]

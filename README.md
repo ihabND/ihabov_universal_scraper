@@ -48,7 +48,7 @@ uvicorn main:app --reload
 
 Set `REDIS_URL` to turn on shared caching and quotas. Without it, the app runs on in-memory counters.
 
-Set `PROXY_URL` (`http://user:password@host:port`) to send both plain HTTP and browser requests out through a proxy. Data-center IPs, like a hosted server's, are often blocked, and a residential proxy usually gets through. `/health` shows whether a proxy is on.
+Set `PROXY_URL` (`http://user:password@host:port`) to send both plain HTTP and browser requests out through a proxy. Data-center IPs, like a hosted server's, are often blocked, and a residential proxy usually gets through. `/health` shows whether a proxy is on. Practice sites built for scraping (toscrape.com, webscraper.io, scrapeme.live, example.com) skip the proxy so they don't use paid traffic; set `PROXY_BYPASS=site1.com,site2.org` to change that list.
 
 **Docker / Fly.io**: the multi-stage `Dockerfile` installs Chromium into a fixed path, and `fly.toml` deploys it with scale-to-zero. API keys are set with `fly secrets set API_KEYS=...` (see [`docs/api-keys.md`](docs/api-keys.md)).
 

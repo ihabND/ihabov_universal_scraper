@@ -23,6 +23,30 @@ def with_scheme(url: str | None) -> str | None:
 
 PROXY_URL = with_scheme(os.environ.get("PROXY_URL", "").strip())
 
+# Practice sites built for scraping. They don't block anyone, so sending them through a paid
+# proxy would only spend traffic. A site here also covers its subdomains (books.toscrape.com).
+DEFAULT_BYPASS = ("toscrape.com", "webscraper.io", "scrapeme.live", "example.com")
+
+
+def parse_bypass(text: str) -> tuple[str, ...]:
+    """PROXY_BYPASS="a.com,b.org" replaces the default list; empty or unset keeps it."""
+    hosts = tuple(h.strip().lower().lstrip(".") for h in text.split(",") if h.strip().strip("."))
+    return hosts or DEFAULT_BYPASS
+
+
+PROXY_BYPASS = parse_bypass(os.environ.get("PROXY_BYPASS", ""))
+
+
+def proxy_for(url: str) -> str | None:
+    """The proxy to fetch `url` through, or None to go out directly."""
+    if not PROXY_URL:
+        return None
+    host = (urlsplit(url).hostname or "").lower()
+    # Exact host or a real subdomain: "evil-toscrape.com" must not match "toscrape.com".
+    if any(host == site or host.endswith("." + site) for site in PROXY_BYPASS):
+        return None
+    return PROXY_URL
+
 
 def playwright_proxy(url: str | None) -> dict[str, str] | None:
     """The proxy in the form Playwright's `launch(proxy=...)` takes, or None when there is none.
@@ -44,6 +68,11 @@ def playwright_proxy(url: str | None) -> dict[str, str] | None:
     if parts.password:
         proxy["password"] = unquote(parts.password)
     return proxy
+
+
+def context_proxy(url: str) -> dict[str, str] | None:
+    """The proxy for a browser context opened to load `url`, in Playwright's form."""
+    return playwright_proxy(proxy_for(url))
 
 
 def proxy_status() -> str:

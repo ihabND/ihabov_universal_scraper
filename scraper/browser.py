@@ -23,7 +23,7 @@ from .errors import (
 )
 from .http_fetch import HTML_CONTENT_TYPES, MAX_CONTENT_BYTES, MAX_REDIRECTS
 from .page import Page
-from .proxy import PROXY_URL, playwright_proxy
+from .proxy import context_proxy
 from .urls import site_of, validate_host, validate_url
 
 BROWSER_ENABLED = os.environ.get("BROWSER_FALLBACK", "on").lower() != "off"
@@ -74,7 +74,6 @@ def get_browser():
         browser_local.browser = browser_local.playwright.chromium.launch(
             channel="chromium",
             headless=True,
-            proxy=playwright_proxy(PROXY_URL),
             # Without this Chromium sets navigator.webdriver = true, which bot checks look for.
             args=["--disable-blink-features=AutomationControlled"],
         )
@@ -193,6 +192,7 @@ def load_in_browser(
             locale="en-US",
             user_agent=browser_user_agent(browser.version.split(".")[0]),
             service_workers="block",  # service workers would make requests that skip the route check
+            proxy=context_proxy(url),  # chosen by the starting URL's site; None goes out directly
         )
     except PlaywrightError as e:
         raise FetchError(f"The browser could not open a page: {first_line(e)}") from e
