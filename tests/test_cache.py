@@ -1,6 +1,7 @@
 """The Redis cache, against an in-memory fake Redis."""
 
-import fakeredis
+import time
+
 import pytest
 
 from scraper import cache, service
@@ -10,14 +11,6 @@ KEY = {"X-API-Key": "test-key"}  # one of the keys set in conftest.py
 
 URL = "https://quotes.toscrape.com/page/2/"
 PAGE = b'<div class="quote"><span class="text">Hi</span><small class="author">Ann</small></div>'
-
-
-@pytest.fixture
-def redis(monkeypatch):
-    server = fakeredis.FakeServer()
-    monkeypatch.setattr(cache, "redis_client", fakeredis.FakeRedis(server=server))
-    monkeypatch.setattr(cache, "_paused_until", 0.0)
-    return server
 
 
 @pytest.fixture
@@ -64,3 +57,29 @@ def test_scraping_still_works_when_redis_is_down(redis, client, fetched):
     redis.connected = False
     assert client.get("/scrape", params={"url": URL}, headers=KEY).status_code == 200
     assert client.get("/health").json()["redis"] == "paused"
+
+
+def test_json_values_round_trip_with_a_ttl(redis):
+    cache.set_json("site:shop.example", {"b": True, "r": ["parse_movie"]}, 600)
+    assert cache.get_json("site:shop.example") == {"b": True, "r": ["parse_movie"]}
+    assert 0 < cache.redis_client.ttl("scrape:v2:site:shop.example") <= 600
+
+
+def test_broken_json_values_read_as_missing(redis):
+    cache.redis_client.set("scrape:v2:site:bad.example", bytes([0xFF]) + b" not json")
+    cache.redis_client.set("scrape:v2:site:list.example", b"[1, 2]")
+    assert cache.get_json("site:bad.example") is None
+    assert cache.get_json("site:list.example") is None
+    assert cache.get_json("site:missing.example") is None
+
+
+def test_json_helpers_do_nothing_without_redis():
+    cache.set_json("site:shop.example", {"b": True}, 600)  # no fixture: redis_client is None
+    assert cache.get_json("site:shop.example") is None
+    assert not cache.redis_available()
+
+
+def test_redis_is_unavailable_while_paused(redis, monkeypatch):
+    assert cache.redis_available()
+    monkeypatch.setattr(cache, "_paused_until", time.monotonic() + 30)
+    assert not cache.redis_available()

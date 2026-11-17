@@ -145,6 +145,31 @@ def set_cached_page(url: str, browser: str, fields: dict, content: bytes, ok: bo
     _set(page_key(url, browser), zlib.compress(header + b"\n" + content, 6), _ttl(ok))
 
 
+# ---- Small JSON records --------------------------------------------------------------------
+# Per-site profiles and per-key cookies: small, so stored as plain JSON without compression.
+
+
+def redis_available() -> bool:
+    """True when Redis is configured and not paused, so "no record" from it means there is none."""
+    return _redis() is not None
+
+
+def get_json(name: str) -> dict | None:
+    value = _get(f"{KEY_PREFIX}:{name}")
+    if value is None:
+        return None
+    try:
+        data = json.loads(value.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as e:
+        logger.warning("Ignoring a broken record at %s: %s", name, e)
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def set_json(name: str, value: dict, ttl: int) -> None:
+    _set(f"{KEY_PREFIX}:{name}", json.dumps(value, separators=(",", ":")).encode("utf-8"), ttl)
+
+
 # ---- Flags ---------------------------------------------------------------------------------
 # Kept in Redis so every machine shares them, and in memory so they still work without Redis.
 

@@ -7,6 +7,7 @@ os.environ["API_KEYS"] = "test-key,other-key"
 os.environ.pop("REDIS_URL", None)  # tests that need Redis bring an in-memory fake
 os.environ.pop("PROXY_URL", None)  # tests never go out through a real proxy
 
+import fakeredis  # noqa: E402
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 from limits.storage import MemoryStorage  # noqa: E402
@@ -27,3 +28,12 @@ def clean_state(monkeypatch):
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+@pytest.fixture
+def redis(monkeypatch):
+    """An in-memory fake Redis in place of the real one, for tests of what is stored there."""
+    server = fakeredis.FakeServer()
+    monkeypatch.setattr(cache, "redis_client", fakeredis.FakeRedis(server=server))
+    monkeypatch.setattr(cache, "_paused_until", 0.0)
+    return server
