@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Form, HTTPException, Request, Security
@@ -13,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 
 from . import cache
 from .auth import api_key_header, is_valid_key
-from .browser import BROWSER_ENABLED
+from .browser import BROWSER_ENABLED, start_warming
 from .errors import ScrapeError
 from .parsers import PARSERS
 from .proxy import proxy_status
@@ -29,8 +30,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_warming()  # in the background: the server takes requests while the browsers start
+    yield
+
+
 app = FastAPI(
     title="Ihabov Universal Scraper",
+    lifespan=lifespan,
     docs_url=None,
     redoc_url=None,
     openapi_url=None,

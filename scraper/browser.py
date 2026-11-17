@@ -27,6 +27,9 @@ from .proxy import context_proxy
 from .urls import site_of, validate_host, validate_url
 
 BROWSER_ENABLED = os.environ.get("BROWSER_FALLBACK", "on").lower() != "off"
+# Start the browsers in the background at boot, so the first browser request doesn't wait for one.
+BROWSER_WARM = os.environ.get("BROWSER_WARM", "on").lower() != "off"
+WARM_BARRIER_SECONDS = 30
 BROWSER_TIMEOUT_MS = 30000
 BROWSER_CHALLENGE_WAIT_SECONDS = 20
 BROWSER_RENDER_WAIT_MS = 5000  # extra time for JavaScript to finish building the page
@@ -80,6 +83,37 @@ def get_browser():
     except Exception as e:
         raise FetchError(f"The browser could not start: {first_line(e)}") from e
     return browser_local.browser
+
+
+def warm_browsers() -> int:
+    """Start a browser in every browser worker thread, and say how many started. Each worker must
+    start its own (the sync Playwright API is bound to its thread), so every task waits at a barrier
+    until all workers hold one, which keeps one worker from taking two tasks. A browser that can't
+    start is only logged: the first real request tries again, as it always did."""
+    barrier = threading.Barrier(BROWSER_WORKERS, timeout=WARM_BARRIER_SECONDS)
+
+    def warm_one() -> None:
+        barrier.wait()
+        get_browser()
+
+    started = 0
+    for future in [browser_pool.submit(warm_one) for _ in range(BROWSER_WORKERS)]:
+        try:
+            future.result()
+            started += 1
+        except Exception as e:
+            logger.warning("A browser could not be started ahead of time: %s", first_line(e))
+    logger.info("%d of %d browsers started ahead of time", started, BROWSER_WORKERS)
+    return started
+
+
+def start_warming() -> threading.Thread | None:
+    """Warm the browsers on a background thread, so the server takes requests right away."""
+    if not (BROWSER_ENABLED and BROWSER_WARM):
+        return None
+    thread = threading.Thread(target=warm_browsers, name="browser-warmup", daemon=True)
+    thread.start()
+    return thread
 
 
 def route_request(route, host_cache: dict[str, bool]) -> None:

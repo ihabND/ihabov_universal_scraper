@@ -6,6 +6,7 @@ import os
 os.environ["API_KEYS"] = "test-key,other-key"
 os.environ.pop("REDIS_URL", None)  # tests that need Redis bring an in-memory fake
 os.environ.pop("PROXY_URL", None)  # tests never go out through a real proxy
+os.environ["BROWSER_WARM"] = "off"  # tests never start a real browser
 
 import fakeredis  # noqa: E402
 import pytest  # noqa: E402
