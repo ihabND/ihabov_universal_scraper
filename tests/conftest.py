@@ -22,7 +22,6 @@ def clean_state(monkeypatch):
     """Every test starts with fresh rate-limit counters, no remembered sites and no saved cookies."""
     monkeypatch.setattr(quota, "_memory", FixedWindowRateLimiter(MemoryStorage()))
     blocking.clearances.clear()
-    cache._flags.clear()
     profiles.clear_memory()
 
 

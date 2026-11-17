@@ -4,14 +4,13 @@ the scraper keeps working, just without the cache.
 Three kinds of entries, all with a TTL:
 - results:   the finished API response, per URL, mode and browser option
 - pages:     the fetched page itself, per URL and browser option, shared by HTML and JSON mode
-- flags:     small facts like "this site blocks plain requests"
+- records:   small JSON facts, like what was learned about a site (profiles.py)
 Results and pages are zlib-compressed: HTML shrinks to a fraction of its size.
 """
 
 import json
 import logging
 import os
-import threading
 import time
 import zlib
 
@@ -168,38 +167,3 @@ def get_json(name: str) -> dict | None:
 
 def set_json(name: str, value: dict, ttl: int) -> None:
     _set(f"{KEY_PREFIX}:{name}", json.dumps(value, separators=(",", ":")).encode("utf-8"), ttl)
-
-
-# ---- Flags ---------------------------------------------------------------------------------
-# Kept in Redis so every machine shares them, and in memory so they still work without Redis.
-
-_flags: dict[str, float] = {}
-_flags_lock = threading.Lock()
-
-
-def raise_flag(name: str, ttl: int) -> None:
-    with _flags_lock:
-        now = time.monotonic()
-        for stale in [k for k, until in _flags.items() if until <= now]:
-            del _flags[stale]
-        _flags[name] = now + ttl
-    _set(f"{KEY_PREFIX}:flag:{name}", b"1", ttl)
-
-
-def flag_is_up(name: str) -> bool:
-    with _flags_lock:
-        if _flags.get(name, 0.0) > time.monotonic():
-            return True
-    return _get(f"{KEY_PREFIX}:flag:{name}") is not None
-
-
-def lower_flag(name: str) -> None:
-    with _flags_lock:
-        _flags.pop(name, None)
-    client = _redis()
-    if client is None:
-        return
-    try:
-        client.delete(f"{KEY_PREFIX}:flag:{name}")
-    except RedisError as e:
-        _failed("delete", e)

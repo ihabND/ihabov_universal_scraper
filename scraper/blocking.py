@@ -5,13 +5,11 @@ import threading
 import time
 from dataclasses import dataclass
 
-from . import cache
 from .page import Page
 
 BLOCKED_STATUS_CODES = {202, 403, 429, 503}
 CHALLENGE_MARKERS = (b"awswaf", b"_cf_chl_opt", b"<title>Just a moment...</title>", b"captcha-delivery.com")
 CHALLENGE_PAGE_MAX_BYTES = 150 * 1024
-NEEDS_BROWSER_SECONDS = 600  # a site that blocked plain requests goes straight to the browser this long
 CLEARANCE_SECONDS = 20 * 60  # how long cookies from a passed bot check are kept for reuse
 MAX_CLEARANCES = 1000
 # The browser headers that bot-check cookies are usually bound to; sent along with those cookies.
@@ -28,22 +26,7 @@ def looks_blocked(page: Page) -> bool:
     return page.status_code in BLOCKED_STATUS_CODES or has_challenge(page.content)
 
 
-# ---- Sites that block plain requests -------------------------------------------------------
-# Shared by all callers (it says nothing about anyone's request) and kept in Redis when available,
-# so every machine knows. Expires on its own, so a site that stops blocking is tried plainly again.
-
-
-def needs_browser(site: str) -> bool:
-    return cache.flag_is_up(f"needs-browser:{site}")
-
-
-def remember_needs_browser(site: str) -> None:
-    cache.raise_flag(f"needs-browser:{site}", NEEDS_BROWSER_SECONDS)
-
-
-def forget_needs_browser(site: str) -> None:
-    cache.lower_flag(f"needs-browser:{site}")
-
+# Which sites block plain requests is remembered in profiles.py.
 
 # ---- Cookies from passed bot checks --------------------------------------------------------
 

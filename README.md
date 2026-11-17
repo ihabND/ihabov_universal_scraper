@@ -11,7 +11,7 @@ A web-scraping API: send it any public URL and get back clean HTML, or structure
 ## Features
 
 - **Two output modes**: `html` returns the cleaned page; `json` returns structured fields on supported sites (books, products, recipes, movies and more), using site parsers and schema.org JSON-LD.
-- **Automatic browser fallback**: it spots blocks (403/429/503, Cloudflare, AWS WAF and DataDome challenge pages), retries in Playwright Chromium, and remembers for 10 minutes which sites need the browser. Clearance cookies from passed checks are reused for 20 minutes.
+- **Automatic browser fallback**: it spots blocks (403/429/503, Cloudflare, AWS WAF and DataDome challenge pages), retries in Playwright Chromium, and remembers for 7 days which sites need the browser (re-checked about once a day in the background). Known parser sites like IMDb start out marked, so their first request skips the doomed plain attempt. Clearance cookies from passed checks are reused for 20 minutes.
 - **Browser-grade HTTP**: `curl_cffi` with a current browser TLS fingerprint, request timeouts, a response-size cap, and a content-type check.
 - **Batch endpoint**: up to 50 URLs per call, run in parallel with per-site concurrency limits and spacing so no single site gets hammered. Failures are reported per URL.
 - **Caching**: Redis caches pages (10 min for successes, 30 s for errors). If Redis goes down, the API skips it for 30 s instead of timing out on every request.
