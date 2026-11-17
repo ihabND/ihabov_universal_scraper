@@ -30,6 +30,14 @@ class Parser:
     # True when the parser reads nothing but <script type="application/ld+json"> tags. The page is
     # then parsed with only those tags kept, which is about twice as fast on large pages.
     json_ld_only: bool = False
+    # True when the site is known to block plain requests: its first request goes to the browser
+    # instead of wasting a plain attempt. Only a starting guess; what the scraper learns wins.
+    blocks_plain: bool = False
+
+    @property
+    def name(self) -> str:
+        """A stable, unique name, used to remember which parsers need the browser on their site."""
+        return self.parse.__name__
 
 
 # Keeps only the JSON-LD script tags when building the soup.
@@ -457,6 +465,7 @@ PARSERS = [
         fields="title, alternate_title, type, year, date_published, content_rating, genres, rating, rating_count, "
         "runtime_minutes, directors, writers, actors, keywords, description, poster, trailer, url",
         json_ld_only=True,
+        blocks_plain=True,
     ),
 ]
 

@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient  # noqa: E402
 from limits.storage import MemoryStorage  # noqa: E402
 from limits.strategies import FixedWindowRateLimiter  # noqa: E402
 
-from scraper import blocking, cache, quota  # noqa: E402
+from scraper import blocking, cache, profiles, quota  # noqa: E402
 from scraper.app import app  # noqa: E402
 
 
@@ -23,6 +23,7 @@ def clean_state(monkeypatch):
     monkeypatch.setattr(quota, "_memory", FixedWindowRateLimiter(MemoryStorage()))
     blocking.clearances.clear()
     cache._flags.clear()
+    profiles.clear_memory()
 
 
 @pytest.fixture
