@@ -20,7 +20,7 @@ def scrape(url: str, mode: str = "html", browser: str = "auto") -> dict:
     return response.json()
 
 
-data = scrape("https://www.knjizare-vulkan.rs/domaci-klasici/25486-tvrdava", mode="json")
+data = scrape("https://www.knjizare-vulkan.rs/domaci-klasici/316418-dervis-i-smrt", mode="json")
 
 print(data["url"], data["status_code"], data["fetched_with"])
 for key, value in data["parsed"].items():
