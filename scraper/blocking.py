@@ -13,6 +13,8 @@ CHALLENGE_MARKERS = (b"awswaf", b"_cf_chl_opt", b"<title>Just a moment...</title
 CHALLENGE_PAGE_MAX_BYTES = 150 * 1024
 CLEARANCE_SECONDS = 4 * 3600  # how long cookies from a passed bot check are kept for reuse
 MAX_CLEARANCES = 1000
+# After plain HTTP failed with a key's cookies, renewed cookies skip plain HTTP this long, then get a fresh try.
+HTTP_RETRY_SECONDS = 3600
 # The browser headers that bot-check cookies are usually bound to; sent along with those cookies.
 CLEARANCE_HEADERS = ("user-agent", "accept-language", "sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform")
 
@@ -42,6 +44,7 @@ class Clearance:
     headers: dict[str, str]
     expires: float  # wall clock, since the record is shared between processes
     http_works: bool | None = None  # None: not tried yet. False: plain HTTP was still blocked with them.
+    http_checked: float = 0.0  # wall clock: when http_works was last set
 
 
 clearances: dict[tuple[str, str], Clearance] = {}
@@ -58,16 +61,19 @@ def _from_json(data: dict | None, now: float) -> Clearance | None:
     if data is None:
         return None
     cookies, headers, expires, http_works = (data.get(k) for k in ("cookies", "headers", "expires", "http_works"))
+    http_checked = data.get("http_checked", 0.0)
     if not isinstance(cookies, list) or not all(isinstance(c, dict) for c in cookies):
         return None
     if not isinstance(headers, dict) or not all(isinstance(v, str) for v in headers.values()):
         return None
-    if isinstance(expires, bool) or not isinstance(expires, int | float) or http_works not in (True, False, None):
+    if http_works not in (True, False, None):
+        return None
+    if any(isinstance(n, bool) or not isinstance(n, int | float) for n in (expires, http_checked)):
         return None
     live = [c for c in cookies if not (isinstance(c.get("expires"), int | float) and 0 < c["expires"] <= now)]
     if not live or expires <= now:
         return None
-    return Clearance(live, headers, float(expires), http_works)
+    return Clearance(live, headers, float(expires), http_works, float(http_checked))
 
 
 def _store(owner: str, site: str, clearance: Clearance) -> None:
@@ -78,6 +84,7 @@ def _store(owner: str, site: str, clearance: Clearance) -> None:
             "headers": clearance.headers,
             "expires": clearance.expires,
             "http_works": clearance.http_works,
+            "http_checked": clearance.http_checked,
         }
         cache.set_json(clearance_key(owner, site), data, ttl)
 
@@ -103,10 +110,19 @@ def save_clearance(owner: str | None, site: str, cookies: list[dict], headers: d
     if not owner or not cookies:
         return
     old = get_clearance(owner, site)
-    # If plain HTTP already failed with this browser's cookies, don't try it again on every renewal.
-    http_works = False if old is not None and old.http_works is False and old.headers == headers else None
     now = time.time()
-    clearance = Clearance(cookies, headers, now + CLEARANCE_SECONDS, http_works)
+    # If plain HTTP recently failed with this browser's cookies, don't try it again on every renewal.
+    # After HTTP_RETRY_SECONDS the new cookies get a fresh try: the old ones may simply have gone stale.
+    failed_recently = (
+        old is not None
+        and old.http_works is False
+        and old.headers == headers
+        and now - old.http_checked < HTTP_RETRY_SECONDS
+    )
+    if failed_recently:
+        clearance = Clearance(cookies, headers, now + CLEARANCE_SECONDS, False, old.http_checked)
+    else:
+        clearance = Clearance(cookies, headers, now + CLEARANCE_SECONDS)
     with clearances_lock:
         clearances[(owner, site)] = clearance
         if len(clearances) > MAX_CLEARANCES:
@@ -121,4 +137,5 @@ def save_clearance(owner: str | None, site: str, cookies: list[dict], headers: d
 def note_http_result(owner: str, site: str, clearance: Clearance, worked: bool) -> None:
     with clearances_lock:
         clearance.http_works = worked
+        clearance.http_checked = time.time()
     _store(owner, site, clearance)

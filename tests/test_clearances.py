@@ -43,3 +43,14 @@ def test_a_malformed_record_reads_as_none(redis):
 def test_cookies_work_from_memory_without_redis():
     blocking.save_clearance("alice", "shop.example", [COOKIE], {})
     assert blocking.get_clearance("alice", "shop.example") is not None
+
+
+def test_cookies_get_a_fresh_plain_try_an_hour_after_failing(monkeypatch):
+    blocking.save_clearance("alice", "shop.example", [COOKIE], {})
+    blocking.note_http_result("alice", "shop.example", blocking.get_clearance("alice", "shop.example"), False)
+    blocking.save_clearance("alice", "shop.example", [COOKIE], {})  # renewed by the next browser run
+    assert blocking.get_clearance("alice", "shop.example").http_works is False
+    later = time.time() + blocking.HTTP_RETRY_SECONDS + 1
+    monkeypatch.setattr(blocking.time, "time", lambda: later)
+    blocking.save_clearance("alice", "shop.example", [COOKIE], {})
+    assert blocking.get_clearance("alice", "shop.example").http_works is None

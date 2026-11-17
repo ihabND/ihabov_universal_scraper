@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from scraper import profiles, service
-from scraper.errors import ParseError
+from scraper.errors import BrowserBusyError, ParseError
 from scraper.page import Page
 from scraper.service import scrape
 
@@ -19,14 +19,16 @@ RENDERED = Page(
 
 @pytest.fixture
 def fakes(monkeypatch):
-    state = SimpleNamespace(plain_calls=0, browser_calls=0, rechecks=[])
+    state = SimpleNamespace(plain_calls=0, browser_calls=0, rechecks=[], plain_result=EMPTY, browser_error=None)
 
     def fake_fetch(url, *args, **kwargs):
         state.plain_calls += 1
-        return EMPTY
+        return state.plain_result
 
     def fake_browser(url, **kwargs):
         state.browser_calls += 1
+        if state.browser_error:
+            raise state.browser_error
         return RENDERED
 
     def reset():
@@ -58,3 +60,20 @@ def test_render_memory_respects_browser_never(fakes):
     with pytest.raises(ParseError):
         scrape(QUOTES, "json", "never")
     assert fakes.browser_calls == 0
+
+
+def test_a_busy_browser_falls_back_to_the_plain_page(fakes):
+    profiles.learn_needs_render("quotes.toscrape.com", "parse_quotes")
+    fakes.browser_error = BrowserBusyError("All browsers are busy right now, try again in a moment.")
+    fakes.plain_result = Page(QUOTES, 200, RENDERED.content)  # the memory was wrong: plain works now
+    result = scrape(QUOTES, "json")
+    assert result.parsed == [{"quote": "Hi", "author": "Ann", "tags": []}] and result.fetched_with == "http"
+    assert profiles.get_profile("quotes.toscrape.com").render == set()
+
+
+def test_when_both_fail_the_browser_error_stands(fakes):
+    profiles.learn_needs_render("quotes.toscrape.com", "parse_quotes")
+    fakes.browser_error = BrowserBusyError("All browsers are busy right now, try again in a moment.")
+    with pytest.raises(BrowserBusyError):
+        scrape(QUOTES, "json")
+    assert fakes.browser_calls == 1 and fakes.plain_calls == 1

@@ -85,8 +85,12 @@ def _learned(site: str) -> SiteProfile | None:
             return profile
     if not cache.redis_available():
         return None
-    profile = _from_json(cache.get_json(_key(site)))
-    _remember(site, profile, now + PROFILE_SECONDS)
+    profile, expires = _from_json(cache.get_json(_key(site))), now + PROFILE_SECONDS
+    if profile is None and entry is not None and entry[1] is not None and now < entry[2]:
+        # Redis has nothing (it was down when this was learned) or the read just failed. Nothing
+        # ever deletes a profile from Redis early, so the memory copy is still the latest word.
+        profile, expires = entry[1], entry[2]
+    _remember(site, profile, expires)
     return profile
 
 

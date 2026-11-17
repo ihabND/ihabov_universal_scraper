@@ -69,7 +69,8 @@ def fetch(
     if use_fallback and blocked:
         logger.info("HTTP fetch of %s looks blocked (status %d), trying the browser", page.url, page.status_code)
         page = in_browser(page.url, after_block=True)
-        learn_blocked(site)
+        if not looks_blocked(page):  # only the browser got through; a site that's down for both isn't learned
+            learn_blocked(site)
         log_route(site, "plain, then browser", started)
         return page
     log_route(site, "plain+cookies" if clearance is not None else "plain", started)

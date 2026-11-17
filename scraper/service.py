@@ -14,7 +14,7 @@ from .errors import InvalidURLError, ParseError, ScrapeError, UnsupportedSiteErr
 from .fetch import fetch
 from .page import Page
 from .parsers import PARSERS, Parser, find_parser, parse_page, ready_check
-from .profiles import get_profile, learn_needs_render, maybe_recheck
+from .profiles import get_profile, learn_needs_render, learn_renders_plain, maybe_recheck
 from .schemas import BatchItem, BatchResponse, BrowserOption, Mode, ScrapeResponse
 from .urls import normalize_url, site_of
 
@@ -94,22 +94,38 @@ def scrape(
         return gate(normalized) if gate else nullcontext()
 
     site = site_of(normalized)
+    browser_error: ScrapeError | None = None  # set when the remembered browser route failed
     page = cached_page(normalized, browser, mode)
     if page is None:
         # A parser known to need JavaScript on this site skips the plain page it can't read.
         render_first = parser is not None and browser == "auto" and BROWSER_ENABLED
         if render_first and parser.name in get_profile(site).render:
-            with gated():
-                page = fetch_with_browser(normalized, owner=owner, ready=ready, queue_timeout=queue_timeout)
-            maybe_recheck(site, normalized, parser)
-        else:
-            with gated():
-                page = fetch(normalized, browser, owner=owner, ready=ready, queue_timeout=queue_timeout)
+            try:
+                with gated():
+                    page = fetch_with_browser(normalized, owner=owner, ready=ready, queue_timeout=queue_timeout)
+                maybe_recheck(site, normalized, parser)
+            except ScrapeError as e:
+                # The memory may be wrong: the plain page still gets its try, as it would have without it.
+                logger.info("The browser failed on %s (%s), trying the plain page", normalized, e)
+                browser_error = e
+        if page is None:
+            route = "never" if browser_error else browser  # after a browser failure, plain only
+            try:
+                with gated():
+                    page = fetch(normalized, route, owner=owner, ready=ready, queue_timeout=queue_timeout)
+            except ScrapeError:
+                if browser_error is not None:
+                    raise browser_error from None
+                raise
         remember_page(normalized, browser, page)
     if parser:
         try:
             parsed = parse_page(parser, page)
+            if browser_error is not None:
+                learn_renders_plain(site, parser.name)
         except ParseError:
+            if browser_error is not None:
+                raise browser_error from None
             # Only retry with the browser when it could help: an error page (404, 500) will
             # be the same error page in a browser, so don't spend a browser run on it.
             if page.fetched_with == "browser" or browser == "never" or not BROWSER_ENABLED or not page.ok:

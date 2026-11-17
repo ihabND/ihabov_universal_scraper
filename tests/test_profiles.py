@@ -69,6 +69,23 @@ def test_profiles_work_in_memory_while_redis_is_paused(redis, monkeypatch):
     assert get_profile("shop.example").blocks_plain
 
 
+def test_a_profile_learned_during_a_redis_outage_is_kept(redis, monkeypatch):
+    monkeypatch.setattr(cache, "_paused_until", time.monotonic() + 30)
+    profiles.learn_blocked("shop.example")  # only memory gets it
+    monkeypatch.setattr(cache, "_paused_until", 0.0)
+    later = time.monotonic() + profiles.PROFILE_MEMORY_SECONDS + 1
+    monkeypatch.setattr(profiles.time, "monotonic", lambda: later)
+    assert get_profile("shop.example").blocks_plain
+
+
+def test_a_failed_redis_read_keeps_the_memory_copy(redis, monkeypatch):
+    profiles.learn_blocked("shop.example")
+    redis.connected = False
+    later = time.monotonic() + profiles.PROFILE_MEMORY_SECONDS + 1
+    monkeypatch.setattr(profiles.time, "monotonic", lambda: later)
+    assert get_profile("shop.example").blocks_plain
+
+
 def test_a_broken_redis_record_reads_as_unknown(redis):
     cache.set_json("site:shop.example", {"b": "yes", "r": 5}, 600)
     assert get_profile("shop.example") == SiteProfile()

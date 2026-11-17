@@ -105,3 +105,10 @@ def test_the_learned_block_outlives_ten_minutes(fake, monkeypatch):
     monkeypatch.setattr(profiles.time, "monotonic", lambda: later)
     fetch(URL)
     assert len(fake["http"]) == 1
+
+
+def test_a_site_that_fails_in_the_browser_too_is_not_learned_as_blocking(fake):
+    fake["http_result"] = Page(URL, 503, b"<html>down for maintenance</html>")
+    fake["browser_result"] = Page(URL, 503, b"<html>down for maintenance</html>", "browser")
+    fetch(URL)
+    assert not profiles.get_profile("shop.example").blocks_plain
