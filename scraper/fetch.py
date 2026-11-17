@@ -65,7 +65,7 @@ def fetch(
         return page
     blocked = looks_blocked(page)
     if clearance is not None:
-        note_http_result(clearance, not blocked)
+        note_http_result(owner, site, clearance, not blocked)
     if use_fallback and blocked:
         logger.info("HTTP fetch of %s looks blocked (status %d), trying the browser", page.url, page.status_code)
         page = in_browser(page.url, after_block=True)
