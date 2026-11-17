@@ -11,7 +11,9 @@ A web-scraping API: send it any public URL and get back clean HTML, or structure
 ## Features
 
 - **Two output modes**: `html` returns the cleaned page; `json` returns structured fields on supported sites (books, products, recipes, movies and more), using site parsers and schema.org JSON-LD.
-- **Automatic browser fallback**: it spots blocks (403/429/503, Cloudflare, AWS WAF and DataDome challenge pages), retries in Playwright Chromium, and remembers for 7 days which sites need the browser (re-checked about once a day in the background). Known parser sites like IMDb start out marked, so their first request skips the doomed plain attempt. Clearance cookies from passed checks are kept per API key for up to 4 hours (in Redis when it's configured, so they survive restarts), and later pages go over plain HTTP with them, which on IMDb takes about 1 s instead of 3–7 s in the browser.
+- **Automatic browser fallback**: it spots blocks (403/429/503, Cloudflare, AWS WAF and DataDome challenge pages) and retries in Playwright Chromium.
+- **Site memory**: the scraper keeps a profile per site, for 7 days in Redis, with what it has learned there: whether plain requests get bot-checked, and which parsers only find their data after JavaScript runs. Each request takes the route its site's profile points to: plain HTTP with this key's saved bot-check cookies, the browser first for sites that block plain requests, or plain HTTP with the browser as a fallback. In JSON mode, a parser that needs JavaScript goes straight to the browser. A remembered route that fails falls back to the other one within the same request, and each profile is re-checked in the background about once a day. Known sites like IMDb start out marked as blocking.
+- **Per-key bot-check cookies**: cookies from a passed bot check are kept per API key (hashed) for up to 4 hours, in Redis when it's configured, so they survive restarts and scale-to-zero. With them, IMDb title pages come back in about 1.5 s over plain HTTP. One key's cookies are never used for another key.
 - **Warm browsers**: both Chromium workers start in the background at boot, so the first browser request doesn't pay for starting one. `BROWSER_WARM=off` turns this off.
 - **Browser-grade HTTP**: `curl_cffi` with a current browser TLS fingerprint, request timeouts, a response-size cap, and a content-type check.
 - **Batch endpoint**: up to 50 URLs per call, run in parallel with per-site concurrency limits and spacing so no single site gets hammered. Failures are reported per URL.
@@ -72,7 +74,8 @@ scraper/
   fetch.py       HTTP-first, browser-fallback orchestration
   http_fetch.py  curl_cffi client, redirects, size and type checks
   browser.py     Playwright Chromium fetches, queued
-  blocking.py    bot-check detection, clearance-cookie reuse
+  blocking.py    bot-check detection, per-key clearance cookies
+  profiles.py    per-site memory: blocking and JavaScript-rendering, daily re-check
   parsers.py     per-site structured parsers
   proxy.py       optional outgoing proxy for both fetch paths
   urls.py        URL normalisation and SSRF guard
