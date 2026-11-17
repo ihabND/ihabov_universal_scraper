@@ -9,14 +9,18 @@ Parsers can mark their site as blocking, which is the starting guess until somet
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 
 from . import cache
-from .parsers import PARSERS
+from .blocking import looks_blocked
+from .http_fetch import fetch_page
+from .parsers import PARSERS, Parser, parse_page
 
 PROFILE_SECONDS = 7 * 24 * 3600  # a site nobody scrapes for a week is forgotten
 PROFILE_MEMORY_SECONDS = 60  # how long the memory copy is used before Redis is asked again
 MAX_PROFILES = 1000
+RECHECK_SECONDS = 24 * 3600  # how often a site sent past the plain route gets one plain try again
 
 logger = logging.getLogger(__name__)
 
@@ -37,8 +41,11 @@ _memory_lock = threading.Lock()
 
 
 def clear_memory() -> None:
+    """Forget everything this process holds in memory (used by tests)."""
     with _memory_lock:
         _memory.clear()
+    with _recheck_lock:
+        rechecks_in_flight.clear()
 
 
 def _key(site: str) -> str:
@@ -126,3 +133,49 @@ def learn_needs_render(site: str, parser_name: str) -> None:
 def learn_renders_plain(site: str, parser_name: str) -> None:
     logger.info("Learned that %s on %s works from the plain page", parser_name, site)
     _learn(site, render=get_profile(site).render - {parser_name})
+
+
+# ---- Daily re-check --------------------------------------------------------------------------
+# A site that stopped blocking, or a page that stopped needing JavaScript, would otherwise keep
+# paying for the browser for a week. Once a day one plain request finds out, in the background,
+# so no caller waits for it.
+
+recheck_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="recheck")
+rechecks_in_flight: set[str] = set()
+_recheck_lock = threading.Lock()
+
+
+def maybe_recheck(site: str, url: str, parser: Parser | None = None) -> None:
+    """After a request the profile sent past the plain route: if that route was last tried more
+    than a day ago, try it again in the background. Without a parser the question is "does the
+    site still block?", with one it is "does this parser still need the browser?"."""
+    profile = get_profile(site)
+    if profile.seeded or time.time() - profile.checked_at <= RECHECK_SECONDS:
+        return
+    if not (parser.name in profile.render if parser else profile.blocks_plain):
+        return
+    with _recheck_lock:
+        if site in rechecks_in_flight:
+            return
+        rechecks_in_flight.add(site)
+    # Claim the check first, so other requests and other machines don't start their own.
+    profile.checked_at = time.time()
+    save_profile(site, profile)
+    recheck_pool.submit(run_recheck, site, url, parser)
+
+
+def run_recheck(site: str, url: str, parser: Parser | None) -> None:
+    try:
+        page = fetch_page(url)
+        if looks_blocked(page):
+            return
+        if parser is None:
+            learn_not_blocked(site)
+        else:
+            parse_page(parser, page)
+            learn_renders_plain(site, parser.name)
+    except Exception as e:  # a failed check changes nothing; the route stays as it is
+        logger.info("Re-check of %s found nothing new: %s", url, e)
+    finally:
+        with _recheck_lock:
+            rechecks_in_flight.discard(site)

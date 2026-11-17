@@ -14,6 +14,7 @@ from .errors import InvalidURLError, ParseError, ScrapeError, UnsupportedSiteErr
 from .fetch import fetch
 from .page import Page
 from .parsers import PARSERS, Parser, find_parser, parse_page, ready_check
+from .profiles import get_profile, learn_needs_render, maybe_recheck
 from .schemas import BatchItem, BatchResponse, BrowserOption, Mode, ScrapeResponse
 from .urls import normalize_url, site_of
 
@@ -92,10 +93,18 @@ def scrape(
     def gated():
         return gate(normalized) if gate else nullcontext()
 
+    site = site_of(normalized)
     page = cached_page(normalized, browser, mode)
     if page is None:
-        with gated():
-            page = fetch(normalized, browser, owner=owner, ready=ready, queue_timeout=queue_timeout)
+        # A parser known to need JavaScript on this site skips the plain page it can't read.
+        render_first = parser is not None and browser == "auto" and BROWSER_ENABLED
+        if render_first and parser.name in get_profile(site).render:
+            with gated():
+                page = fetch_with_browser(normalized, owner=owner, ready=ready, queue_timeout=queue_timeout)
+            maybe_recheck(site, normalized, parser)
+        else:
+            with gated():
+                page = fetch(normalized, browser, owner=owner, ready=ready, queue_timeout=queue_timeout)
         remember_page(normalized, browser, page)
     if parser:
         try:
@@ -110,6 +119,7 @@ def scrape(
                 page = fetch_with_browser(page.url, owner=owner, ready=ready, queue_timeout=queue_timeout)
             remember_page(normalized, browser, page)
             parsed = parse_page(parser, page)
+            learn_needs_render(site, parser.name)
     result = ScrapeResponse(url=normalized, status_code=page.status_code, ok=page.ok, fetched_with=page.fetched_with)
     if parser:
         result.parsed = parsed

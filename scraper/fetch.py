@@ -11,7 +11,7 @@ from .browser import BROWSER_ENABLED, BROWSER_QUEUE_TIMEOUT_SECONDS, fetch_with_
 from .errors import FetchError, ScrapeError
 from .http_fetch import fetch_page
 from .page import Page
-from .profiles import get_profile, learn_blocked, learn_not_blocked
+from .profiles import get_profile, learn_blocked, learn_not_blocked, maybe_recheck
 from .urls import site_of
 
 logger = logging.getLogger(__name__)
@@ -48,7 +48,11 @@ def fetch(
     # Cookies from a passed bot check come first: a plain request with them is far faster than the browser.
     if use_fallback and clearance is None and get_profile(site).blocks_plain:
         page = fetch_known_blocked(url, site, in_browser)
-        log_route(site, "browser (profile)" if page.fetched_with == "browser" else "plain", started)
+        if page.fetched_with == "browser":
+            log_route(site, "browser (profile)", started)
+            maybe_recheck(site, url)
+        else:
+            log_route(site, "plain", started)
         return page
     try:
         page = fetch_page(url, clearance)
