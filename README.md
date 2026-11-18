@@ -4,9 +4,9 @@ A web-scraping API: send it any public URL and get back clean HTML, or structure
 
 [![tests](https://github.com/ihabND/ihabov_universal_scraper/actions/workflows/tests.yml/badge.svg)](https://github.com/ihabND/ihabov_universal_scraper/actions/workflows/tests.yml) ![Python](https://img.shields.io/badge/python-3.12-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-009688) ![Redis](https://img.shields.io/badge/Redis-cache%20%26%20quotas-DC382D) ![license](https://img.shields.io/badge/license-MIT-lightgrey)
 
-![The web workbench turning a car listing page into structured JSON](docs/images/demo.gif)
+![The web workbench (at /workbench) turning a car listing page into structured JSON](docs/images/demo.gif)
 
-**Live demo: [ihabov-universal-scraper.fly.dev](https://ihabov-universal-scraper.fly.dev)** (the API docs are open; scraping needs an API key, which I hand out on request). The server scales to zero when idle, so the first request after a quiet spell takes a few seconds while it starts.
+**Live demo: [ihabov-universal-scraper.fly.dev](https://ihabov-universal-scraper.fly.dev)**. The home page scrapes the example sites live with a public test key, no sign-up needed; other pages need a full API key. The server scales to zero when idle, so the first request after a quiet spell takes a few seconds while it starts.
 
 ## Features
 
@@ -17,7 +17,7 @@ A web-scraping API: send it any public URL and get back clean HTML, or structure
 - **Batch endpoint**: up to 50 URLs per call, 8 at a time per key, at most 4 per site at once. Failures are reported per URL.
 - **Caching**: fetched pages are cached in Redis for 10 minutes (30 s for errors), shared by both modes, and identical requests in flight share one fetch.
 - **Security**: keys compared in constant time; rate limits per IP before a key is accepted and per key after; every connection the scraper makes itself, the browser's included, passes a local egress guard that only connects to public addresses, which also covers redirects and DNS rebinding. With `PROXY_URL` set, traffic to sites outside `PROXY_BYPASS` goes to that proxy instead, which must not be able to reach your internal network.
-- **Web workbench** at `/` and hand-written API docs at `/docs`.
+- **Home page** at `/`: try it on the example sites with the public test key, see the raw response and which step of the ladder served it. The full **web workbench** is at `/workbench`, and hand-written API docs at `/docs`.
 
 ## Usage
 
@@ -70,9 +70,12 @@ uvicorn scraper.app:app --reload
 | `BROWSER_WORKERS`, `BATCH_WORKERS` | pages open at once; batch URLs at once per key | `2`, `8` |
 | `STRATEGY_DB` | the SQLite file holding every site's strategy | `data/strategies.db` |
 | `ADMIN_KEYS` | comma-separated keys that may edit site strategies | none |
+| `TEST_KEY` | a public key for the home page: `GET /scrape` on the example sites only; unset turns the live demo off | none |
+| `TEST_KEY_SITES` | sites the test key may scrape (subdomains included) | practice sites |
+| `TEST_KEY_LIMITS`, `TEST_KEY_TOTAL_LIMITS` | the test key's limits per client IP and for everyone together; they never fail open | `30/hour`, `1000/day` |
 | `TRUSTED_IP_HEADER` | header carrying the client IP from a trusted proxy (`Fly-Client-IP` on Fly) | none |
 
-**Docker / Fly.io**: the `Dockerfile` installs Chromium and runs as a non-root user, and `fly.toml` deploys it with scale-to-zero and a health check. API keys are set with `fly secrets set API_KEYS=...` (see [`docs/api-keys.md`](docs/api-keys.md)), admin keys with `fly secrets set ADMIN_KEYS=...`. Site strategies live on a volume mounted at `/data`. Create it once before the first deploy with this change, then give the app's user the folder:
+**Docker / Fly.io**: the `Dockerfile` installs Chromium and runs as a non-root user, and `fly.toml` deploys it with scale-to-zero and a health check. API keys are set with `fly secrets set API_KEYS=...` (see [`docs/api-keys.md`](docs/api-keys.md)), admin keys with `fly secrets set ADMIN_KEYS=...`, and the home page's public test key with `fly secrets set TEST_KEY=...`. Site strategies live on a volume mounted at `/data`. Create it once before the first deploy with this change, then give the app's user the folder:
 
 ```bash
 fly volumes create scraper_data --size 1 --region ams
@@ -91,7 +94,7 @@ scraper/
   app.py        the FastAPI app and the scraper's lifetime
   settings.py   every environment setting, read once
   api/          routes, key check and rate limits, request/response models
-  web/          the workbench and docs pages
+  web/          the home page, the workbench and the docs pages
   core/         scrape and batch (service.py), the fetcher ladder (ladder.py), Page, errors
   fetchers/     plain HTTP and the browser; a new tier is a new class here
   antibot/      bot-check detection, per-key cookies, the captcha-solver plug-in point

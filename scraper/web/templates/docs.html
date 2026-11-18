@@ -29,6 +29,8 @@
       <p>Every request needs an API key, sent in the <code>X-API-Key</code> header. Keys are handed out personally; there is no sign-up.</p>
       <div class="codeblock"><pre class="code" id="code-auth">X-API-Key: YOUR_API_KEY</pre><button class="tool copy" type="button" data-copy-target="code-auth">Copy</button></div>
       <p>Don't put the key in the URL, since query strings end up in logs and browser history. A missing or wrong key returns <code>401</code>.</p>
+      <h3 id="test-key">The test key</h3>
+      <p>The <a href="/">home page</a> shows a public test key, so anyone can try the API. It works only with <code>GET /scrape</code>, and only on the example sites: <code>toscrape.com</code>, <code>webscraper.io</code>, <code>scrapeme.live</code> and <code>example.com</code>. A page that redirects elsewhere is refused too. Any other URL or endpoint returns <code>403</code>, and the key has its own rate limits (see below).</p>
 
       <h2 id="scrape"><span class="method">GET</span>/scrape</h2>
       <p>Fetches a page and returns its content.</p>
@@ -161,6 +163,7 @@
       <h2 id="rate-limits">Rate limits</h2>
       <p>Requests with a valid key are counted against <strong>that key's quota: 300 URLs per minute and 10,000 per day</strong>. Every URL counts, including ones served from the cache, so a batch of 20 URLs uses 20.</p>
       <p>Requests with a missing or wrong key are limited to <strong>10 per minute per client IP address</strong>, so keys can't be guessed quickly.</p>
+      <p>The test key is limited to <strong>30 scrapes per hour per client IP address</strong>, and 1,000 per day for everyone together.</p>
       <p>Over either limit the API answers <code>429</code> with a <code>Retry-After</code> header in seconds.</p>
 
       <h2 id="examples">Examples</h2>

@@ -173,6 +173,9 @@ function explain(response, data) {
   if (response.status === 403 && detail.startsWith("The test key works on the example sites")) {
     return { status: 403, title: "The test key works on the example sites", text: "Pick one of them." };
   }
+  if (response.status === 429 && detail.includes("unavailable")) {
+    return { status: 429, title: "The demo is paused for a moment", text: "Its rate limits can't be checked right now. Try again shortly." };
+  }
   if (response.status === 429) {
     const minutes = Math.max(1, Math.ceil(Number(response.headers.get("Retry-After") || 60) / 60));
     return { status: 429, title: "This hour's test scrapes are used up", text: `Try again in ${minutes} minute${minutes === 1 ? "" : "s"}.` };
