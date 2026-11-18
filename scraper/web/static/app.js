@@ -214,9 +214,9 @@
     filter.addEventListener("input", render);
     $("#export").addEventListener("click", async () => {
       try {
-        const pins = await call("GET", "/api/sites/export", undefined, true);
-        download(JSON.stringify(pins, null, 2), "site-pins.json", "application/json");
-        say(`Exported the pins of ${Object.keys(pins).length} sites.`);
+        const sites = await call("GET", "/api/sites/export", undefined, true);
+        download(JSON.stringify(sites, null, 2), "site-strategies.json", "application/json");
+        say(`Exported ${Object.keys(sites).length} sites. Edit their "pinned" values and import the file to change pins.`);
       } catch (e) {
         say(e.message, true);
       }

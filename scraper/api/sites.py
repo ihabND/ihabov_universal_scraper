@@ -64,20 +64,26 @@ async def list_sites(request: Request, api_key: str | None = Security(api_key_he
 
 
 @router.get("/export")
-async def export_pins(request: Request, admin_key: str | None = Security(admin_key_header)) -> dict[str, dict]:
+async def export_sites(request: Request, admin_key: str | None = Security(admin_key_header)) -> dict[str, dict]:
+    """Every site's whole record."""
     await authorize_admin(request, admin_key)
-    return strategies.export_pins()
+    return strategies.export_all()
 
 
 @router.post("/import")
 async def import_pins(
     request: Request, data: dict[str, dict] = Body(...), admin_key: str | None = Security(admin_key_header)
 ) -> dict:
-    """Sets the pins of every site in the file, or of none when any of them is wrong."""
+    """Sets the pins of every site in an exported file (only its "pinned" values count), or of none when any of
+    them is wrong."""
     await authorize_admin(request, admin_key)
-    for site, pins in data.items():
-        checked(site, pins)
-    return {"imported": strategies.import_pins(data)}
+    pins = {}
+    for site, record in data.items():
+        if not isinstance(record.get("pinned"), dict):
+            raise HTTPException(400, f'{site}: no "pinned" settings. Import a file made by Export.')
+        checked(site, record["pinned"])
+        pins[site] = record["pinned"]
+    return {"imported": strategies.import_pins(pins)}
 
 
 @router.put("/{site}/pins")

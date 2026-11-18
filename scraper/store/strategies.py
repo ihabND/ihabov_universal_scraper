@@ -9,7 +9,7 @@ import json
 import logging
 import sqlite3
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -175,8 +175,8 @@ def delete(site: str) -> None:
     execute("DELETE FROM sites WHERE site = ?", (site,), strict=True)
 
 
-def export_pins() -> dict[str, dict]:
-    return {r.site: r.pinned for r in all_records() if r.pinned}
+def export_all() -> dict[str, dict]:
+    return {r.site: {name: value for name, value in asdict(r).items() if name != "site"} for r in all_records()}
 
 
 def import_pins(data: dict[str, dict]) -> int:

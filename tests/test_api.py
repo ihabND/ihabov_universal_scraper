@@ -160,6 +160,10 @@ def test_strategies_need_an_api_key_to_read_and_the_admin_key_to_edit(client, tm
     assert client.put("/api/sites/shop.example/pins", json=pins, headers=ADMIN).status_code == 200
     assert strategies.strategy_for("shop.example", "http").start == "browser"
     assert client.get("/sites").status_code == 200
+    exported = client.get("/api/sites/export", headers=ADMIN).json()
+    assert exported["shop.example"]["pinned"] == {"start": "browser"} and exported["shop.example"]["requests"] == 1
+    assert client.post("/api/sites/import", json={"shop.example": {"start": "http"}}, headers=ADMIN).status_code == 400
+    assert client.post("/api/sites/import", json=exported, headers=ADMIN).json() == {"imported": 1}
     assert client.delete("/api/sites/shop.example", headers={"X-Admin-Key": "test-key"}).status_code == 401
     assert client.delete("/api/sites/shop.example", headers=ADMIN).status_code == 200
     assert strategies.get("shop.example") is None
