@@ -15,7 +15,7 @@ from ..core.page import Page
 from ..core.strategy import Strategy
 from ..net.guard import EgressGuard
 from ..net.proxy import curl_proxy
-from ..net.urls import validate_url
+from ..net.urls import domain_of, site_of, validate_url
 from .base import MAX_CONTENT_BYTES, FetchRequest, check_content_type
 
 MAX_REDIRECTS = 5
@@ -56,19 +56,21 @@ class HttpFetcher:
         """Follows redirects by hand, so every hop is checked before it's requested."""
         if self.session is None:
             await self.start()
-        strategy, cookies = req.strategy, Cookies()
-        headers = {} if strategy.locale == "en-US" else {"accept-language": accept_language(strategy.locale)}
-        headers.update(strategy.headers)
+        strategy, cookies, earned = req.strategy, Cookies(), {}
+        language = {} if strategy.locale == "en-US" else {"accept-language": accept_language(strategy.locale)}
         if req.clearance and req.clearance.plain_ok:
             for c in req.clearance.cookies:
                 cookies.set(
                     c["name"], c["value"], c.get("domain", ""), c.get("path") or "/", secure=bool(c.get("secure"))
                 )
-            headers.update(req.clearance.headers)  # the cookies only work with the headers they were earned with
+            earned = req.clearance.headers  # the cookies only work with the headers they were earned with
         deadline = time.monotonic() + strategy.fetch_budget
-        url = req.url
+        url, home = req.url, domain_of(site_of(req.url))
         for _ in range(MAX_REDIRECTS + 1):
             await validate_url(url)
+            # A site's own headers may hold its secrets, so they don't follow a redirect to another domain.
+            own = strategy.headers if domain_of(site_of(url)) == home else {}
+            headers = {**language, **own, **earned}
             response = await self.get(url, cookies, headers or None, deadline, strategy)
             keep_cookies(cookies, response)
             location = response.headers.get("location")

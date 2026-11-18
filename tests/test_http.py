@@ -64,6 +64,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.reply(b"<html>welcome back</html>")
         if self.path == "/echo-header":
             return self.reply(f"x-site={self.headers.get('x-site')}".encode())
+        if self.path == "/to-localhost":  # the same server under another host name
+            location = f"http://localhost:{self.server.server_address[1]}/echo-header"
+            return self.reply(status=302, headers=[("location", location)])
         if self.path == "/user-agent":
             return self.reply(self.headers.get("user-agent", "").encode())
         if self.path == "/always-503":
@@ -159,11 +162,14 @@ async def test_a_second_plain_tier_has_its_own_fingerprint_and_name(fetcher, sit
     assert page.fetched_with == "http-safari" and b"Safari" in page.content and b"Chrome" not in page.content
 
 
-async def test_a_site_s_own_retries_and_headers_are_used(fetcher, site):
+async def test_a_site_s_own_retries_and_headers_are_used_and_its_headers_stay_with_it(fetcher, site, monkeypatch):
     assert (await fetch(fetcher, site + "/always-503", strategy=Strategy(retries=0))).status_code == 503
     assert hits["always-503"] == 1
     page = await fetch(fetcher, site + "/echo-header", strategy=Strategy(headers={"x-site": "1"}))
     assert page.content == b"x-site=1"
+    monkeypatch.setattr(urls, "is_public", lambda ip: ip in ("127.0.0.1", "::1"))
+    page = await fetch(fetcher, site + "/to-localhost", strategy=Strategy(headers={"x-site": "1"}))
+    assert page.content == b"x-site=None"
 
 
 async def test_a_cookie_set_without_a_path_is_sent_on_the_next_hop(fetcher, site):

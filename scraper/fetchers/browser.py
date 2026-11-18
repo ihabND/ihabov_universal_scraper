@@ -20,7 +20,7 @@ from ..core.errors import BrowserBusyError, ContentTooLargeError, FetchError
 from ..core.page import Page
 from ..net.guard import EgressGuard
 from ..net.proxy import browser_proxy
-from ..net.urls import validate_url
+from ..net.urls import domain_of, site_of, validate_url
 from .base import MAX_CONTENT_BYTES, FetchRequest, check_content_type
 
 RENDER_POLL_MS = 500  # JSON mode: how often to check whether the data is there yet
@@ -101,7 +101,6 @@ class BrowserFetcher:
         try:
             context = await browser.new_context(
                 locale=strategy.locale,
-                extra_http_headers=strategy.headers or None,
                 user_agent=self.user_agent,
                 service_workers="block",  # their requests would skip the resource filter
                 proxy=browser_proxy(req.url, self.guard, strategy.proxy),
@@ -112,7 +111,8 @@ class BrowserFetcher:
             if req.clearance:
                 with suppress(self.api.Error):
                     await context.add_cookies(req.clearance.cookies)
-            await context.route("**/*", partial(self.skip_heavy, set(strategy.skip_resources)))
+            home = domain_of(site_of(req.url))
+            await context.route("**/*", partial(self.on_request, set(strategy.skip_resources), strategy.headers, home))
             tab = await context.new_page()
             responses = []
             tab.on(
@@ -146,10 +146,15 @@ class BrowserFetcher:
             raise ContentTooLargeError("Page is too large.")
         return page
 
-    async def skip_heavy(self, skipped: set[str], route) -> None:
+    async def on_request(self, skipped: set[str], headers: dict[str, str], home: str, route) -> None:
+        """Skips heavy resources. The site's own headers may hold its secrets, so only requests to its own domain
+        get them, not the third parties the page loads from."""
+        request = route.request
         with suppress(self.api.Error):  # the page may close while a request is still in flight
-            if route.request.resource_type in skipped:
+            if request.resource_type in skipped:
                 await route.abort()
+            elif headers and domain_of(site_of(request.url)) == home:
+                await route.continue_(headers={**request.headers, **headers})
             else:
                 await route.continue_()
 
