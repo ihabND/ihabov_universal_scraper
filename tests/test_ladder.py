@@ -158,6 +158,37 @@ async def test_a_blocked_browser_page_keeps_no_cookies(http, browser):
     assert await get_clearance("alice", "shop.example") is None
 
 
+# ---- Pages built by JavaScript -----------------------------------------------------------------
+
+BUILT_BY_JS = Page(URL, 200, b"<html><script>" + b"x" * 30_000 + b"</script><div id=app></div></html>")
+RENDERED_TEXT = Page(URL, 200, b"<html><p>" + b"listing " * 100 + b"</p></html>", "browser")
+
+
+async def test_a_big_page_with_almost_no_text_is_rendered_and_remembered(http, browser):
+    http.result, browser.result = BUILT_BY_JS, RENDERED_TEXT
+    assert await fetch(URL, [http, browser]) is RENDERED_TEXT
+    assert (await get_profile("shop.example")).render == ["html"]
+    await fetch(URL, [http, browser])
+    assert len(http.requests) == 1 and len(browser.requests) == 2
+
+
+async def test_a_small_page_with_little_text_is_kept(http, browser):
+    assert await fetch(URL, [http, browser]) is OPEN
+    assert browser.requests == []
+
+
+async def test_without_the_browser_a_page_built_by_javascript_is_returned(http):
+    http.result = BUILT_BY_JS
+    assert await fetch(URL, [http]) is BUILT_BY_JS
+
+
+async def test_a_page_the_browser_cannot_fill_either_is_not_remembered(http, browser):
+    http.result = BUILT_BY_JS
+    browser.result = Page(URL, 200, BUILT_BY_JS.content, "browser")
+    assert (await fetch(URL, [http, browser])).fetched_with == "browser"
+    assert await get_profile("shop.example") is None
+
+
 # ---- JSON mode -------------------------------------------------------------------------------
 
 

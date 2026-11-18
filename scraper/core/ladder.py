@@ -13,12 +13,13 @@ from ..net.urls import site_of
 from ..parsers import Parsed, Parser, parse_page, ready_check, seed_tier
 from ..store.profiles import SiteProfile, get_profile, save_profile
 from .errors import BlockedError, BrowserBusyError, BrowserDisabledError, FetchError, ParseError
-from .page import Page
+from .page import Page, looks_empty
 
 # Failures another fetcher might not have. Anything else (an internal address, a PDF, a page that is
 # too large) would be the same with every fetcher.
 RECOVERABLE = (FetchError, BrowserBusyError, BrowserDisabledError)
 
+HTML_RENDER = "html"  # the render-memory name for HTML-mode pages that need JavaScript
 logger = logging.getLogger(__name__)
 
 
@@ -35,7 +36,8 @@ async def fetch(
     profile = await get_profile(site) or SiteProfile(tier=seed_tier(site))
     remembered = next((i for i, tier in enumerate(tiers) if tier.name == profile.tier), 0)
     clearance = await get_clearance(owner, site)
-    needs_render = parser is not None and parser.name in profile.render
+    render_name = parser.name if parser else HTML_RENDER
+    needs_render = render_name in profile.render
     start = remembered
     if needs_render:
         start = max(start, next((i for i, tier in enumerate(tiers) if tier.renders), start))
@@ -71,13 +73,16 @@ async def fetch(
                     raise
                 unparsed = page
                 continue
+        elif not tier.renders and page.ok and await asyncio.to_thread(looks_empty, page):
+            unparsed = page  # built by JavaScript, so a fetcher that runs it may get the content
+            continue
         learned = SiteProfile(profile.tier, list(profile.render))
         if blocked or i < start == remembered:
             learned.tier = tier.name
-        if parser and unparsed and tier.renders:
-            learned.render = sorted({*learned.render, parser.name})
-        if parser and needs_render and not tier.renders:
-            learned.render.remove(parser.name)
+        if unparsed and tier.renders and (parser or not await asyncio.to_thread(looks_empty, page)):
+            learned.render = sorted({*learned.render, render_name})
+        if needs_render and not tier.renders:
+            learned.render.remove(render_name)
         if learned != profile:
             logger.info("%s: learned %s", site, learned)
             await save_profile(site, learned)
@@ -85,6 +90,8 @@ async def fetch(
             await save_clearance(owner, site_of(page.url), page.earned)
         logger.info("%s: %s in %.2f s", site, tier.name, time.monotonic() - started)
         return page, parsed
+    if unparsed and not parser:
+        return unparsed, None  # the plain page is the best there is
     busy = next((e for e in errors if isinstance(e, BrowserBusyError)), None)
     if blocked and busy:
         raise busy  # the browser never got its turn, so this is "try again soon", not a block

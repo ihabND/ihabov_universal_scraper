@@ -2,10 +2,17 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING
 
+import lxml.html
+from lxml import etree
+
 from ..antibot.detect import looks_blocked
 
 if TYPE_CHECKING:
     from ..antibot.clearance import Clearance
+
+# A page this big with this little visible text was built by JavaScript (or is a JavaScript check).
+EMPTY_PAGE_MIN_BYTES = 20 * 1024
+EMPTY_PAGE_MAX_TEXT = 400
 
 
 @dataclass
@@ -25,3 +32,14 @@ class Page:
     @property
     def ok(self) -> bool:
         return 200 <= self.status_code < 300 and not self.blocked
+
+
+def looks_empty(page: Page) -> bool:
+    if len(page.content) < EMPTY_PAGE_MIN_BYTES:
+        return False
+    try:
+        tree = lxml.html.document_fromstring(page.content)
+    except etree.ParserError:
+        return False
+    etree.strip_elements(tree, "script", "style", "noscript", "template", with_tail=False)
+    return len(" ".join(tree.text_content().split())) < EMPTY_PAGE_MAX_TEXT
