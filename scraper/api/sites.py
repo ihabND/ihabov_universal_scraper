@@ -1,8 +1,10 @@
 """Every site's strategy: reading it needs an API key, changing it an admin key."""
 
+from dataclasses import asdict
+
 from fastapi import APIRouter, Body, HTTPException, Request, Security
 
-from ..core.strategy import DEFAULTS, check_pins
+from ..core.strategy import DEFAULTS, check_pins, effective
 from ..net.urls import site_of
 from ..parsers import seed_tier
 from ..store import strategies
@@ -13,20 +15,24 @@ router = APIRouter(prefix="/api/sites")
 
 
 def describe(record: SiteRecord) -> dict:
-    """Each setting's value in force and where it comes from: pinned, learned, the parser's guess, or default."""
+    """Each setting's value in force and where it comes from: pinned, learned, the parser's guess, the first
+    fingerprint, or default."""
     seed = seed_tier(record.site)
+    in_force = asdict(effective(record.pinned, record.learned, seed))
     rows = []
     for name, default in DEFAULTS.items():
         learned = record.learned.get(name)
         if name in record.pinned:
-            value, source, at = record.pinned[name], "pinned", record.pinned_at.get(name)
+            source, at = "pinned", record.pinned_at.get(name)
         elif learned:
-            value, source, at = learned["value"], "learned", learned["at"]
-        elif name == "start" and seed != default:
-            value, source, at = seed, "parser", None
+            source, at = "learned", learned["at"]
+        elif in_force[name] != default:  # only start has a default of its own
+            source, at = "parser" if seed != default else "fingerprints", None
         else:
-            value, source, at = default, "default", None
-        rows.append({"name": name, "value": value, "source": source, "at": at, "default": default, "learned": learned})
+            source, at = "default", None
+        rows.append(
+            {"name": name, "value": in_force[name], "source": source, "at": at, "default": default, "learned": learned}
+        )
     return {
         "site": record.site,
         "settings": rows,

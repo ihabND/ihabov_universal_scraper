@@ -34,7 +34,7 @@ class HttpFetcher:
 
     def __init__(
         self, guard: EgressGuard, *, name: str = "http", impersonate: str = "chrome", retries: int | None = None
-    ):  # retries=None: as many as the site's strategy says
+    ):  # retries=None: as many as the site's strategy says, which a site that starts here always gets
         self.guard, self.name, self.impersonate, self.retries = guard, name, impersonate, retries
         self.session: AsyncSession | None = None
 
@@ -83,7 +83,7 @@ class HttpFetcher:
     async def get(
         self, url: str, cookies: Cookies, headers: dict | None, deadline: float, strategy: Strategy
     ) -> Response:
-        retries = strategy.retries if self.retries is None else self.retries
+        retries = strategy.retries if self.retries is None or self.name == strategy.start else self.retries
         for attempt in range(retries + 1):
             remaining = deadline - time.monotonic()
             if remaining <= 0:

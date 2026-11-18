@@ -121,26 +121,35 @@ class Scraper:
             result.content = await asyncio.to_thread(prettify, page)
         return result
 
-    def cheapest(self, strategy: Strategy) -> Fetcher:
-        return next(t for t in ladder.arranged(self.tiers, strategy.fingerprints) if not t.renders)
+    def plain_tiers(self, strategy: Strategy) -> list[Fetcher]:
+        return [t for t in ladder.arranged(self.tiers, strategy.fingerprints) if not t.renders]
 
     def start_check(self, url: str, site: str, parser: Parser | None, strategy: Strategy) -> None:
         """A site whose strategy skips the cheapest route gets that route tried again once a day, after the
         request is served, so a strategy never goes stale and never slows a request down."""
         render_name = parser.name if parser else ladder.HTML_RENDER
-        skips = strategy.start != self.cheapest(strategy).name or render_name in strategy.render
+        skips = strategy.start != self.plain_tiers(strategy)[0].name or render_name in strategy.render
         if skips and strategies.claim_check(site):
             task = asyncio.create_task(self.check(url, site, parser, strategy))
             self.checks.add(task)
             task.add_done_callback(self.checks.discard)
 
     async def check(self, url: str, site: str, parser: Parser | None, strategy: Strategy) -> None:
-        """Learns the cheapest route when it works now; a pin it disagrees with gets a flag."""
-        plain = self.cheapest(strategy)
-        try:
-            page = await plain.fetch(FetchRequest(with_params(url, strategy.url_params), strategy=strategy))
-            if not page.ok:
+        """Learns the cheapest route that works now; a pin it disagrees with gets a flag."""
+        req = FetchRequest(with_params(url, strategy.url_params), strategy=strategy)
+        for plain in self.plain_tiers(strategy):
+            try:
+                page = await plain.fetch(req)
+            except ScrapeError as e:
+                logger.info("%s: daily check: %s failed: %s", site, plain.name, e)
+                page = None
+            if page is not None and page.ok:
+                break
+            if plain.name == strategy.start:
                 return
+        else:
+            return
+        try:
             if strategy.start != plain.name:
                 strategies.learn(site, "start", plain.name, f"{plain.name} got {page.status_code} (daily check)")
             render_name = parser.name if parser else ladder.HTML_RENDER

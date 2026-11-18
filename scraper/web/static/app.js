@@ -76,7 +76,7 @@
       return String(value);
     };
     const source = (row) =>
-      ({ pinned: `pinned ${row.at || ""}`, learned: `learned ${row.at}`, parser: "parser default" })[row.source] ||
+      ({ pinned: `pinned ${row.at || ""}`, learned: `learned ${row.at}`, parser: "parser default", fingerprints: "first fingerprint" })[row.source] ||
       "default";
 
     async function call(method, path, body, admin = false) {

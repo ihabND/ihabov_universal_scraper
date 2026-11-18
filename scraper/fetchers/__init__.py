@@ -10,7 +10,7 @@ def build_tiers(guard: EgressGuard) -> list[Fetcher]:
     tiers: list[Fetcher] = [
         HttpFetcher(guard),
         # Sites that block curl's Chrome fingerprint often let its Safari one through (7 of 100 in the
-        # benchmark). No retries: the Chrome tier already retried temporary errors.
+        # benchmark). No retries after the Chrome tier, which already retried temporary errors.
         HttpFetcher(guard, name="http-safari", impersonate="safari", retries=0),
     ]
     if settings.browser_enabled:

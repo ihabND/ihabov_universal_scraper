@@ -87,3 +87,5 @@ def test_pins_beat_learned_values_which_beat_defaults_and_everything_survives_re
     assert record.flags["start"]["seen"] == "plain HTTP got 403 again"
     strategy = strategies.strategy_for("shop.example", seed_start="http")
     assert (strategy.start, strategy.render_wait, strategy.retries) == ("http", 8, 2)
+    strategies.set_pins("safari.example", {"fingerprints": ["safari", "chrome"]})
+    assert strategies.strategy_for("safari.example", seed_start="http").start == "http-safari"

@@ -9,6 +9,7 @@ from scraper.core.errors import BrowserDisabledError
 from scraper.core.page import Page
 from scraper.core.service import Scraper, SiteGate
 from scraper.net.guard import EgressGuard
+from scraper.net.urls import site_of
 from scraper.store import cache, strategies
 
 pytestmark = pytest.mark.anyio
@@ -132,11 +133,24 @@ def test_plain_http_with_the_safari_fingerprint_comes_before_the_browser():
     assert [tier.name for tier in build_tiers(EgressGuard())] == ["http", "http-safari", "browser"]
 
 
-async def test_the_daily_check_updates_a_learned_start_and_flags_a_pinned_one(scraper):
+class Plain:
+    renders, status = False, "ready"
+
+    def __init__(self, name: str, impersonate: str, blocked_on: str = ""):
+        self.name, self.impersonate, self.blocked_on = name, impersonate, blocked_on
+
+    async def fetch(self, req):
+        return Page(req.url, 403 if site_of(req.url) == self.blocked_on else 200, QUOTE_HTML)
+
+
+async def test_the_daily_check_updates_a_learned_start_and_flags_a_pinned_one():
+    scraper = Scraper([Plain("http", "chrome", "c.example"), Plain("http-safari", "safari")], EgressGuard())
     strategies.learn("a.example", "start", "browser", "http got 403")
     strategies.set_pins("b.example", {"start": "browser"})
-    for site in ("a.example", "b.example"):
+    strategies.learn("c.example", "start", "browser", "http-safari got 503")  # a site only Safari gets through
+    for site in ("a.example", "b.example", "c.example"):
         await scraper.check(f"https://{site}/", site, None, strategies.strategy_for(site, "http"))
     assert strategies.strategy_for("a.example", "http").start == "http"
     assert strategies.strategy_for("b.example", "http").start == "browser"
     assert "daily check" in strategies.get("b.example").flags["start"]["seen"]
+    assert strategies.strategy_for("c.example", "http").start == "http-safari"

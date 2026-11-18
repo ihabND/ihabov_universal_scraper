@@ -6,6 +6,7 @@ from dataclasses import asdict, dataclass, field
 PROXY_MODES = ("default", "direct", "proxy")  # default follows PROXY_BYPASS
 START_TIERS = ("http", "http-safari", "browser")
 FINGERPRINTS = ("chrome", "safari")
+PLAIN_TIER = {"chrome": "http", "safari": "http-safari"}  # the fetcher of each fingerprint
 
 
 @dataclass
@@ -34,10 +35,13 @@ DEFAULTS = asdict(Strategy())
 
 
 def effective(pinned: dict, learned: dict[str, dict], seed_start: str) -> Strategy:
-    """Pinned values win over learned ones, which win over the defaults."""
+    """Pinned values win over learned ones, which win over the defaults. Plain HTTP starts with the site's first
+    fingerprint unless a start was pinned or learned."""
     values = {**DEFAULTS, "start": seed_start}
     values.update({name: entry["value"] for name, entry in learned.items() if name in DEFAULTS})
     values.update({name: value for name, value in pinned.items() if name in DEFAULTS})
+    if values["start"] == "http" and "start" not in pinned and "start" not in learned:
+        values["start"] = PLAIN_TIER[values["fingerprints"][0]]
     return Strategy(**values)
 
 
