@@ -4,7 +4,7 @@
 :root {
   --bg: #f4f3f1; --panel: #ffffff; --panel-2: #f9f8f6; --line: #e3e0db; --line-2: #d2cec7;
   --fg: #1d1b18; --muted: #6e6a63; --accent: #e5532d; --accent-fg: #ffffff; --accent-soft: #fdebe5;
-  --good: #2f8a4c; --warn: #b5730b; --bad: #c8372d; --code: #faf9f7;
+  --good: #2f8a4c; --warn: #b5730b; --bad: #c8372d; --code: #faf9f7; --soft: #efece7; --good-soft: #e7f3ea;
   --k: #1d1b18; --s: #2f7a46; --n: #b0471f; --b: #7a4bd0; --z: #9a958c;
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;

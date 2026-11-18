@@ -10,17 +10,19 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
   <link rel="stylesheet" href="{{ asset_url('app.css') }}">
+  {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
   <header class="topbar">
     <a class="mark" href="/"><i aria-hidden="true">~</i>Ihabov Scraper<small>v1</small></a>
     <nav>
-      <a class="hide-sm" href="/docs#json">Supported sites</a>
-      <a href="/sites" {% if page == "sites" %}aria-current="page"{% endif %}>Sites</a>
+      <a href="/workbench" {% if page == "workbench" %}aria-current="page"{% endif %}>Workbench</a>
+      <a class="hide-sm" href="/sites" {% if page == "sites" %}aria-current="page"{% endif %}>Sites</a>
       <a href="/docs" {% if page == "docs" %}aria-current="page"{% endif %}>API docs</a>
+      <a class="hide-sm" href="https://github.com/ihabND/ihabov_universal_scraper">GitHub</a>
     </nav>
   </header>
   {% block content %}{% endblock %}
-  <script src="{{ asset_url('app.js') }}" defer></script>
+  {% block scripts %}<script src="{{ asset_url('app.js') }}" defer></script>{% endblock %}
 </body>
 </html>

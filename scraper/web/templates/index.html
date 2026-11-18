@@ -1,10 +1,11 @@
 {% extends "base.html" %}
+{% set page = "workbench" %}
 {% block body_class %}workbench{% endblock %}
 {% block content %}
 <div class="app">
   <aside class="left">
     {# A real form, so scraping also works without JavaScript; app.js takes over when it loads. #}
-    <form class="group" id="scrape-form" method="post" action="/">
+    <form class="group" id="scrape-form" method="post" action="/workbench">
       <h2>Request</h2>
       <label class="field"><span>URL</span>
         <input class="input" id="url" name="url" type="text" inputmode="url" spellcheck="false" autocomplete="off"
@@ -41,7 +42,7 @@
       <h2>Supported sites <span class="tag">JSON</span></h2>
       <div class="sites">
         {% for site in sites %}
-        <a class="site" href="/?url={{ site.example | urlencode }}&amp;mode=json" data-example="{{ site.example }}" data-host="{{ site.host }}">
+        <a class="site" href="/workbench?url={{ site.example | urlencode }}&amp;mode=json" data-example="{{ site.example }}" data-host="{{ site.host }}">
           <span class="badge" style="background: {{ site.color }}" aria-hidden="true">{{ site.host[0] | upper }}</span>
           <span class="site-text"><b>{{ site.host }}</b><span>{{ site.label }}</span></span>
           <span class="tag">{{ site.shape }}</span>

@@ -119,14 +119,15 @@ def test_batches_are_charged_per_url(client, fetched, monkeypatch):
 
 
 def test_pages_render_with_fingerprinted_assets(client):
-    home = client.get("/")
+    assert "/static/home.js?v=" in client.get("/").text
+    home = client.get("/workbench")
     assert all(f'data-host="{host}"' in home.text for host in ("books.toscrape.com", "imdb.com", "knjizare-vulkan.rs"))
     assert "/static/app.css?v=" in home.text and "/static/app.js?v=" in home.text
     assert client.get("/docs").status_code == 200
 
 
 def test_an_unknown_option_in_the_page_url_still_renders_the_page(client):
-    assert client.get("/", params={"mode": "pdf", "browser": "sometimes"}).status_code == 200
+    assert client.get("/workbench", params={"mode": "pdf", "browser": "sometimes"}).status_code == 200
 
 
 def test_pages_send_security_headers(client):
@@ -134,12 +135,19 @@ def test_pages_send_security_headers(client):
     assert "script-src 'self'" in headers["content-security-policy"] and headers["x-content-type-options"] == "nosniff"
 
 
-def test_the_form_works_without_javascript(client, fetched):
+def test_the_form_works_without_javascript(client, fetched, test_key):
     form = {"url": "https://quotes.toscrape.com/", "mode": "json", "browser": "auto"}
-    page = client.post("/", data={**form, "api_key": "test-key"})
+    page = client.post("/workbench", data={**form, "api_key": "test-key"})
     assert page.status_code == 200 and 'id="seed"' in page.text and "Ann" in page.text
-    refused = client.post("/", data={**form, "api_key": "wrong"})
+    refused = client.post("/workbench", data={**form, "api_key": "wrong"})
     assert refused.status_code == 401 and "Invalid or missing API key" in refused.text
+    assert client.post("/workbench", data={**form, "api_key": "demo-key"}).status_code == 403  # the test key
+
+
+def test_the_home_page_moved_the_workbench(client):
+    old_link = client.get("/", params={"url": "https://books.toscrape.com/", "mode": "json"}, follow_redirects=False)
+    assert old_link.status_code in (302, 307) and old_link.headers["location"].startswith("/workbench?url=")
+    assert 'id="scrape-form"' in client.get("/workbench").text and 'id="scrape-form"' not in client.get("/").text
 
 
 def test_the_front_page_lists_sites_in_registration_order():

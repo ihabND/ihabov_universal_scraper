@@ -117,7 +117,7 @@
       </div>
       <p>Try it with an example page:</p>
       <ul>
-        {% for p in parsers %}<li><a href="/?url={{ p.example | urlencode }}&amp;mode=json"><code>{{ p.example }}</code></a></li>
+        {% for p in parsers %}<li><a href="/workbench?url={{ p.example | urlencode }}&amp;mode=json"><code>{{ p.example }}</code></a></li>
         {% endfor %}
       </ul>
       <h3>Example response (<code>mode=json</code>)</h3>
