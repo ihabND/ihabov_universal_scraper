@@ -162,12 +162,12 @@ def two_sites():
         server.shutdown()
 
 
-@pytest.fixture
-async def browser(monkeypatch, ignore_socket_resets):
+@pytest.fixture(params=["playwright", "patchright"])
+async def browser(request, monkeypatch, ignore_socket_resets):
     monkeypatch.setattr(urls, "is_public", lambda ip: ip == "127.0.0.1")
     guard = EgressGuard()
     await guard.start()
-    fetcher = BrowserFetcher(guard, workers=1, warm=False)
+    fetcher = BrowserFetcher(guard, workers=1, warm=False, engine=request.param)
     yield fetcher
     await fetcher.stop()
     await guard.stop()

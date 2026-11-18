@@ -10,7 +10,9 @@ ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     PYTHONUNBUFFERED=1
 COPY --from=builder /app/.venv .venv/
 # Chromium and the Linux libraries it needs, before `COPY . .` so code changes don't download it again.
+# Playwright and Patchright share one Chromium build, so the second install finds it already there.
 RUN .venv/bin/playwright install --with-deps chromium \
+    && .venv/bin/patchright install chromium \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home scraper
 COPY . .
