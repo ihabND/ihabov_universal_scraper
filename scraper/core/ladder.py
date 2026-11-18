@@ -10,7 +10,7 @@ from contextlib import nullcontext
 from ..antibot.clearance import get_clearance, mark_plain_blocked, save_clearance
 from ..antibot.detect import challenge_of
 from ..fetchers.base import Fetcher, FetchRequest
-from ..net.urls import site_of
+from ..net.urls import site_of, with_params
 from ..parsers import Parsed, Parser, parse_page, ready_check
 from ..store import strategies
 from .errors import BlockedError, BrowserBusyError, BrowserDisabledError, FetchError, ParseError, ScrapeError
@@ -48,7 +48,10 @@ async def fetch(
         start = 0  # plain HTTP with this key's bot-check cookies beats every other route
     # Cookies that plain HTTP was already blocked with may be burned, so no fetcher gets them.
     usable = clearance if clearance and clearance.plain_ok else None
-    req = FetchRequest(url, owner, usable, ready_check(parser, url) if parser else None, queue_timeout=queue_timeout)
+    ready = ready_check(parser, url) if parser else None
+    req = FetchRequest(
+        with_params(url, strategy.url_params), owner, usable, ready, queue_timeout=queue_timeout, strategy=strategy
+    )
     blocked = unparsed = None
     why = ""  # what made the scraper move past a fetcher, kept as the evidence for what it learns
     errors: list[ScrapeError] = []  # a parser's complaint about a page goes in here too
@@ -56,7 +59,7 @@ async def fetch(
     for i in [*range(start, len(tiers)), *reversed(range(start))]:
         tier = tiers[i]
         try:
-            async with gate(url) if gate else nullcontext():
+            async with gate(url, strategy.batch_at_once, strategy.batch_gap) if gate else nullcontext():
                 page = await tier.fetch(req)
         except RECOVERABLE as e:
             logger.info("%s: %s failed: %s", site, tier.name, e)

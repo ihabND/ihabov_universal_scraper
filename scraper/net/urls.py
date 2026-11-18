@@ -6,7 +6,7 @@ import logging
 import socket
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from urllib.parse import quote, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, quote, urlencode, urlsplit, urlunsplit
 
 from ..core.errors import BlockedURLError, HostNotFoundError, InvalidURLError
 
@@ -34,6 +34,15 @@ def normalize_url(url: str) -> str | None:
 
 def site_of(url: str) -> str:
     return (urlsplit(url).hostname or "").removeprefix("www.")
+
+
+def with_params(url: str, params: dict[str, str]) -> str:
+    """The URL with the site's own query parameters added; they replace ones of the same name."""
+    if not params:
+        return url
+    parts = urlsplit(url)
+    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in params]
+    return urlunsplit(parts._replace(query=urlencode([*query, *params.items()])))
 
 
 # Second-level names under a country code, like co.uk or com.au: the domain is one label longer there.

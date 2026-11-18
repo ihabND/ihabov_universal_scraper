@@ -12,15 +12,13 @@ from curl_cffi.requests.exceptions import RequestException
 from ..antibot.detect import challenge_of
 from ..core.errors import ContentTooLargeError, FetchError
 from ..core.page import Page
+from ..core.strategy import Strategy
 from ..net.guard import EgressGuard
 from ..net.proxy import curl_proxy
 from ..net.urls import validate_url
 from .base import MAX_CONTENT_BYTES, FetchRequest, check_content_type
 
-REQUEST_TIMEOUT = 10
-FETCH_BUDGET_SECONDS = 25  # one fetch, including retries, waits and redirects
 MAX_REDIRECTS = 5
-MAX_RETRIES = 2
 BACKOFF_SECONDS = 1
 RETRY_STATUS_CODES = {429, 502, 503, 504}
 REDIRECT_CODES = {301, 302, 303, 307, 308}
@@ -35,8 +33,8 @@ class HttpFetcher:
     status = "ready"
 
     def __init__(
-        self, guard: EgressGuard, *, name: str = "http", impersonate: str = "chrome", retries: int = MAX_RETRIES
-    ):
+        self, guard: EgressGuard, *, name: str = "http", impersonate: str = "chrome", retries: int | None = None
+    ):  # retries=None: as many as the site's strategy says
         self.guard, self.name, self.impersonate, self.retries = guard, name, impersonate, retries
         self.session: AsyncSession | None = None
 
@@ -45,12 +43,8 @@ class HttpFetcher:
         self.session = AsyncSession(
             impersonate=self.impersonate,
             discard_cookies=True,
-            curl_options={
-                CurlOpt.CONNECTTIMEOUT_MS: REQUEST_TIMEOUT * 1000,
-                CurlOpt.LOW_SPEED_LIMIT: 1,  # a connection that sends nothing for 10 s is stalled
-                CurlOpt.LOW_SPEED_TIME: REQUEST_TIMEOUT,
-                CurlOpt.MAXFILESIZE_LARGE: MAX_CONTENT_BYTES,
-            },
+            # Timeouts are set per request: session options would override them.
+            curl_options={CurlOpt.MAXFILESIZE_LARGE: MAX_CONTENT_BYTES},
         )
 
     async def stop(self) -> None:
@@ -62,18 +56,20 @@ class HttpFetcher:
         """Follows redirects by hand, so every hop is checked before it's requested."""
         if self.session is None:
             await self.start()
-        cookies, headers = Cookies(), None
+        strategy, cookies = req.strategy, Cookies()
+        headers = {} if strategy.locale == "en-US" else {"accept-language": accept_language(strategy.locale)}
+        headers.update(strategy.headers)
         if req.clearance and req.clearance.plain_ok:
             for c in req.clearance.cookies:
                 cookies.set(
                     c["name"], c["value"], c.get("domain", ""), c.get("path") or "/", secure=bool(c.get("secure"))
                 )
-            headers = req.clearance.headers
-        deadline = time.monotonic() + FETCH_BUDGET_SECONDS
+            headers.update(req.clearance.headers)  # the cookies only work with the headers they were earned with
+        deadline = time.monotonic() + strategy.fetch_budget
         url = req.url
         for _ in range(MAX_REDIRECTS + 1):
             await validate_url(url)
-            response = await self.get(url, cookies, headers, deadline)
+            response = await self.get(url, cookies, headers or None, deadline, strategy)
             keep_cookies(cookies, response)
             location = response.headers.get("location")
             if response.status_code in REDIRECT_CODES and location:
@@ -84,8 +80,11 @@ class HttpFetcher:
             return Page(url, response.status_code, response.content, self.name)
         raise FetchError("Too many redirects")
 
-    async def get(self, url: str, cookies: Cookies, headers: dict | None, deadline: float) -> Response:
-        for attempt in range(self.retries + 1):
+    async def get(
+        self, url: str, cookies: Cookies, headers: dict | None, deadline: float, strategy: Strategy
+    ) -> Response:
+        retries = strategy.retries if self.retries is None else self.retries
+        for attempt in range(retries + 1):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise FetchError("The site took too long to respond.")
@@ -93,11 +92,11 @@ class HttpFetcher:
             try:
                 response = await self.session.get(
                     url,
-                    timeout=remaining,
+                    timeout=(connect := min(strategy.request_timeout, remaining), remaining - connect),
                     allow_redirects=False,
                     cookies=cookies,
                     headers=headers,
-                    proxy=curl_proxy(url, self.guard),
+                    proxy=curl_proxy(url, self.guard, strategy.proxy),
                 )
             except RequestException as e:
                 if getattr(e, "code", None) == CURLE_FILESIZE_EXCEEDED:
@@ -109,7 +108,7 @@ class HttpFetcher:
             ):
                 return response
             wait = BACKOFF_SECONDS * 2**attempt
-            if attempt == self.retries or time.monotonic() + wait + 1 > deadline:
+            if attempt == retries or time.monotonic() + wait + 1 > deadline:
                 if response is not None:
                     return response
                 if getattr(error, "code", None) == CURLE_PROXY:
@@ -119,6 +118,11 @@ class HttpFetcher:
                 "Attempt %d for %s failed (%s), retrying", attempt + 1, url, response.status_code if response else error
             )
             await asyncio.sleep(wait)
+
+
+def accept_language(locale: str) -> str:
+    language = locale.split("-")[0]
+    return f"{locale},{language};q=0.9" if language != locale else locale
 
 
 def keep_cookies(jar: Cookies, response: Response) -> None:

@@ -1,12 +1,13 @@
 """What a fetcher is. A new tier, like a stealth browser or an unblocker API, is one more class."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 
 from ..antibot.clearance import Clearance
 from ..core.errors import UnsupportedContentError
 from ..core.page import Page
+from ..core.strategy import Strategy
 
 MAX_CONTENT_BYTES = 5 * 1024 * 1024
 HTML_CONTENT_TYPES = ("text/html", "application/xhtml+xml")
@@ -20,6 +21,7 @@ class FetchRequest:
     ready: Callable[[bytes], bool] | None = None  # JSON mode: lets a browser stop once the data is there
     after_block: bool = False  # a cheaper fetcher was blocked, so cookies earned now are worth keeping
     queue_timeout: float = 15
+    strategy: Strategy = field(default_factory=Strategy)  # the site's settings
 
 
 class Fetcher(Protocol):

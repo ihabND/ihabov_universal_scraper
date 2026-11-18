@@ -4,6 +4,8 @@ these defaults."""
 from dataclasses import asdict, dataclass, field
 
 PROXY_MODES = ("default", "direct", "proxy")  # default follows PROXY_BYPASS
+START_TIERS = ("http", "http-safari", "browser")
+FINGERPRINTS = ("chrome", "safari")
 
 
 @dataclass
@@ -49,8 +51,17 @@ def check_pins(pins: dict) -> dict:
             valid = isinstance(value, int | float) and not isinstance(value, bool)
         else:
             valid = type(value) is type(default)
+        if valid and isinstance(value, list):
+            valid = all(isinstance(item, str) for item in value)
+        if valid and isinstance(value, dict):
+            valid = all(isinstance(k, str) and isinstance(v, str) for k, v in value.items())
         if not valid:
             raise ValueError(f"{name} must be a {type(default).__name__}, like {default!r}")
-        if name == "proxy" and value not in PROXY_MODES:
-            raise ValueError(f"proxy must be one of {', '.join(PROXY_MODES)}")
+        if isinstance(value, int | float) and value < (1 if name == "batch_at_once" else 0):
+            raise ValueError(f"{name} can't be {value}")
+        for allowed, setting in ((PROXY_MODES, "proxy"), (START_TIERS, "start")):
+            if name == setting and value not in allowed:
+                raise ValueError(f"{name} must be one of {', '.join(allowed)}")
+        if name == "fingerprints" and (not value or not set(value) <= set(FINGERPRINTS)):
+            raise ValueError(f"fingerprints must list some of {', '.join(FINGERPRINTS)}")
     return pins

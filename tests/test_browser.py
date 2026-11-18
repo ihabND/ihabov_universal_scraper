@@ -36,15 +36,14 @@ async def test_json_mode_stops_as_soon_as_the_data_is_there(monkeypatch):
     monkeypatch.setattr("scraper.fetchers.browser.RENDER_POLL_MS", 10)
     tab = SlowTab(b"<html>loading</html>", b"<html>data</html>")
     fetcher = BrowserFetcher(EgressGuard(), warm=False)
-    content, complete = await fetcher.wait_for_render(tab, b"<html>loading</html>", ready=lambda c: b"data" in c)
+    content, complete = await fetcher.wait_for_render(tab, b"<html>loading</html>", lambda c: b"data" in c, 5)
     assert content == b"<html>data</html>" and complete is False
 
 
-async def test_html_mode_waits_for_the_page_to_settle(monkeypatch):
-    monkeypatch.setattr("scraper.fetchers.browser.RENDER_WAIT_MS", 50)
+async def test_html_mode_waits_for_the_page_to_settle():
     fetcher = BrowserFetcher(EgressGuard(), warm=False)
     content, complete = await fetcher.wait_for_render(
-        SlowTab(b"<html>full</html>"), b"<html>partial</html>", ready=None
+        SlowTab(b"<html>full</html>"), b"<html>partial</html>", None, 0.05
     )
     assert content == b"<html>full</html>" and complete is True
 
@@ -56,12 +55,11 @@ class OtherEngine:
     TimeoutError = type("TimeoutError", (Error,), {})
 
 
-async def test_the_selected_engine_s_errors_are_the_ones_handled(monkeypatch):
-    monkeypatch.setattr("scraper.fetchers.browser.RENDER_WAIT_MS", 50)
+async def test_the_selected_engine_s_errors_are_the_ones_handled():
     fetcher = BrowserFetcher(EgressGuard(), warm=False)
     fetcher.api = OtherEngine
     tab = SlowTab(b"<html>full</html>", timeout_error=OtherEngine.TimeoutError)
-    content, complete = await fetcher.wait_for_render(tab, b"<html>partial</html>", ready=None)
+    content, complete = await fetcher.wait_for_render(tab, b"<html>partial</html>", None, 0.05)
     assert content == b"<html>full</html>" and complete is True
 
 
@@ -86,14 +84,13 @@ DATADOME = b"<script src='https://geo.captcha-delivery.com/i/x.js'></script>"
 
 async def test_a_captcha_no_solver_can_pass_is_not_waited_out():
     tab = StuckTab(DATADOME)
-    content, challenged = await BrowserFetcher(EgressGuard(), warm=False).wait_out_challenge(tab)
+    content, challenged = await BrowserFetcher(EgressGuard(), warm=False).wait_out_challenge(tab, 20)
     assert challenged and tab.waits == 0
 
 
-async def test_a_check_that_can_clear_by_itself_is_waited_for(monkeypatch):
-    monkeypatch.setattr("scraper.fetchers.browser.CHALLENGE_WAIT_SECONDS", 0.2)
+async def test_a_check_that_can_clear_by_itself_is_waited_for():
     tab = StuckTab(b"<title>Just a moment...</title>")
-    await BrowserFetcher(EgressGuard(), warm=False).wait_out_challenge(tab)
+    await BrowserFetcher(EgressGuard(), warm=False).wait_out_challenge(tab, 0.2)
     assert tab.waits >= 2
 
 
@@ -105,9 +102,8 @@ async def test_a_captcha_waits_while_a_registered_solver_works_on_it(monkeypatch
             pass
 
     monkeypatch.setattr("scraper.antibot.solvers.SOLVERS", [DataDomeSolver()])
-    monkeypatch.setattr("scraper.fetchers.browser.CHALLENGE_WAIT_SECONDS", 0.2)
     tab = StuckTab(DATADOME)
-    await BrowserFetcher(EgressGuard(), warm=False).wait_out_challenge(tab)
+    await BrowserFetcher(EgressGuard(), warm=False).wait_out_challenge(tab, 0.2)
     assert tab.waits >= 2
 
 

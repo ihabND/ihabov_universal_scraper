@@ -14,11 +14,10 @@ import redis.asyncio as redis
 from redis.exceptions import RedisError
 
 from ..core.page import Page
+from ..core.strategy import Strategy
 from ..settings import settings
 
 KEY_PREFIX = "scrape:v3"  # bump when a stored format changes; old entries are then never read
-PAGE_SECONDS = 600
-FAILED_PAGE_SECONDS = 30
 MAX_CACHED_BYTES = 4 * 1024 * 1024  # compressed
 PAUSE_SECONDS = 30  # after an error, skip Redis this long instead of timing out on every call
 MAX_MEMORY_RECORDS = 10_000
@@ -78,8 +77,10 @@ async def get_page(url: str, browser: str) -> Page | None:
         return None
 
 
-async def set_page(url: str, browser: str, page: Page) -> None:
-    if not available():
+async def set_page(url: str, browser: str, page: Page, strategy: Strategy | None = None) -> None:
+    strategy = strategy or Strategy()
+    seconds = strategy.cache_seconds if page.ok else strategy.failed_cache_seconds
+    if not available() or seconds <= 0:
         return
     header = {
         "url": page.url,
@@ -89,7 +90,7 @@ async def set_page(url: str, browser: str, page: Page) -> None:
     }
     value = await asyncio.to_thread(zlib.compress, json.dumps(header).encode() + b"\n" + page.content, 6)
     if len(value) <= MAX_CACHED_BYTES:
-        await call("set", page_key(url, browser), value, ex=PAGE_SECONDS if page.ok else FAILED_PAGE_SECONDS)
+        await call("set", page_key(url, browser), value, ex=seconds)
 
 
 async def get_json(name: str) -> dict | None:

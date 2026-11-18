@@ -23,8 +23,6 @@ from .page import Page
 
 QUEUE_SECONDS = 15  # how long a request waits for a free browser
 BATCH_QUEUE_SECONDS = 120  # batch URLs wait longer
-BATCH_PER_SITE = 4  # at most this many batch requests to one site at once
-BATCH_SITE_GAP_SECONDS = 0.25  # started at least this far apart
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +31,7 @@ class Scraper:
     def __init__(self, tiers: list[Fetcher], guard: EgressGuard):
         self.tiers, self.guard = tiers, guard
         self.inflight: dict[tuple, asyncio.Task] = {}
-        self.site_gate = SiteGate(BATCH_PER_SITE, BATCH_SITE_GAP_SECONDS)
+        self.site_gate = SiteGate()
         self.batch_slots = defaultdict(lambda: asyncio.Semaphore(settings.batch_workers))  # per API key
 
     async def start(self) -> None:
@@ -110,7 +108,7 @@ class Scraper:
                 strategies.record_use(site, "-", e.status_code, time.monotonic() - started, False)
                 raise
             strategies.record_use(site, page.fetched_with, page.status_code, time.monotonic() - started, page.ok)
-            await set_page(url, browser, page)
+            await set_page(url, browser, page, strategy)
         result = ScrapeResponse(url=url, status_code=page.status_code, ok=page.ok, fetched_with=page.fetched_with)
         if parser:
             result.parsed = parsed
@@ -157,22 +155,20 @@ class GatedSite:
 
 @dataclass
 class SiteGate:
-    """Politeness for batches: at most `per_site` requests to one site at once, started `gap` seconds apart."""
+    """Politeness for batches: at most `at_once` requests to one site at once, started `gap` seconds apart."""
 
-    per_site: int
-    gap: float
     sites: dict[str, GatedSite] = field(default_factory=dict)
 
     @asynccontextmanager
-    async def __call__(self, url: str):
+    async def __call__(self, url: str, at_once: int, gap: float):
         site = site_of(url)
-        gated = self.sites.setdefault(site, GatedSite(asyncio.Semaphore(self.per_site)))
+        gated = self.sites.setdefault(site, GatedSite(asyncio.Semaphore(at_once)))
         gated.users += 1
         try:
             async with gated.slots:
                 now = time.monotonic()
                 start = max(now, gated.next_start)
-                gated.next_start = start + self.gap
+                gated.next_start = start + gap
                 await asyncio.sleep(start - now)
                 yield
         finally:

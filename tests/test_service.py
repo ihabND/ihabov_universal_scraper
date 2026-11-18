@@ -107,10 +107,10 @@ async def test_one_key_s_batch_runs_a_limited_number_of_urls_at_once(scraper, ht
 
 
 async def test_the_site_gate_spaces_out_requests_to_one_site_and_forgets_it_after():
-    gate, starts = SiteGate(per_site=4, gap=0.05), []
+    gate, starts = SiteGate(), []
 
     async def visit():
-        async with gate("https://shop.example/a"):
+        async with gate("https://shop.example/a", 4, 0.05):
             starts.append(time.monotonic())
 
     await asyncio.gather(visit(), visit(), visit())

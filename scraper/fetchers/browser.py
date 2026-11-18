@@ -11,6 +11,7 @@ import platform
 import time
 from collections.abc import Callable
 from contextlib import suppress
+from functools import partial
 
 from ..antibot.clearance import CLEARANCE_HEADERS, Clearance
 from ..antibot.detect import CAPTCHAS, challenge_of
@@ -22,11 +23,7 @@ from ..net.proxy import browser_proxy
 from ..net.urls import validate_url
 from .base import MAX_CONTENT_BYTES, FetchRequest, check_content_type
 
-LOAD_TIMEOUT_MS = 30000
-CHALLENGE_WAIT_SECONDS = 20
-RENDER_WAIT_MS = 5000  # extra time for JavaScript to finish building the page
 RENDER_POLL_MS = 500  # JSON mode: how often to check whether the data is there yet
-SKIPPED_RESOURCES = {"image", "font", "media"}
 LAUNCH_ARGS = [
     "--disable-blink-features=AutomationControlled",  # otherwise navigator.webdriver is true
     "--force-webrtc-ip-handling-policy=disable_non_proxied_udp",  # WebRTC would bypass the egress guard
@@ -100,13 +97,14 @@ class BrowserFetcher:
 
     async def load(self, req: FetchRequest) -> Page:
         logger.info("Fetching %s with the %s", req.url, self.name)
-        browser = await self.get_browser()
+        browser, strategy = await self.get_browser(), req.strategy
         try:
             context = await browser.new_context(
-                locale="en-US",
+                locale=strategy.locale,
+                extra_http_headers=strategy.headers or None,
                 user_agent=self.user_agent,
                 service_workers="block",  # their requests would skip the resource filter
-                proxy=browser_proxy(req.url, self.guard),
+                proxy=browser_proxy(req.url, self.guard, strategy.proxy),
             )
         except self.api.Error as e:
             raise FetchError(f"The browser could not open a page: {first_line(e)}") from e
@@ -114,18 +112,18 @@ class BrowserFetcher:
             if req.clearance:
                 with suppress(self.api.Error):
                     await context.add_cookies(req.clearance.cookies)
-            await context.route("**/*", self.skip_heavy)
+            await context.route("**/*", partial(self.skip_heavy, set(strategy.skip_resources)))
             tab = await context.new_page()
             responses = []
             tab.on(
                 "response",
                 lambda r: r.frame == tab.main_frame and r.request.is_navigation_request() and responses.append(r),
             )
-            await tab.goto(req.url, wait_until="domcontentloaded", timeout=LOAD_TIMEOUT_MS)
-            content, challenged = await self.wait_out_challenge(tab)
+            await tab.goto(req.url, wait_until="domcontentloaded", timeout=strategy.load_timeout * 1000)
+            content, challenged = await self.wait_out_challenge(tab, strategy.challenge_wait)
             complete = True
             if content and not challenge_of(content):
-                content, complete = await self.wait_for_render(tab, content, req.ready)
+                content, complete = await self.wait_for_render(tab, content, req.ready, strategy.render_wait)
             if not content or not responses:
                 raise FetchError("The browser did not get the page.")
             last = responses[-1]
@@ -148,9 +146,9 @@ class BrowserFetcher:
             raise ContentTooLargeError("Page is too large.")
         return page
 
-    async def skip_heavy(self, route) -> None:
+    async def skip_heavy(self, skipped: set[str], route) -> None:
         with suppress(self.api.Error):  # the page may close while a request is still in flight
-            if route.request.resource_type in SKIPPED_RESOURCES:
+            if route.request.resource_type in skipped:
                 await route.abort()
             else:
                 await route.continue_()
@@ -161,9 +159,9 @@ class BrowserFetcher:
         except self.api.Error:  # in the middle of a navigation
             return b""
 
-    async def wait_out_challenge(self, tab) -> tuple[bytes, bool]:
+    async def wait_out_challenge(self, tab, wait: float) -> tuple[bytes, bool]:
         """Poll until the page stops being a bot check, running solvers once per vendor. Says whether one was seen."""
-        deadline = time.monotonic() + CHALLENGE_WAIT_SECONDS
+        deadline = time.monotonic() + wait
         solved: set[str] = set()
         while True:
             content = await self.read_content(tab)
@@ -178,10 +176,12 @@ class BrowserFetcher:
                 return content, bool(solved)
             await tab.wait_for_timeout(1000)
 
-    async def wait_for_render(self, tab, content: bytes, ready: Callable[[bytes], bool] | None) -> tuple[bytes, bool]:
+    async def wait_for_render(
+        self, tab, content: bytes, ready: Callable[[bytes], bool] | None, wait: float
+    ) -> tuple[bytes, bool]:
         """Give JavaScript a bounded time to finish the page. With `ready` (JSON mode), stop as soon as the
         parser can read its data. Also says whether the page got its full time."""
-        deadline = time.monotonic() + RENDER_WAIT_MS / 1000
+        deadline = time.monotonic() + wait
         if ready is not None and await asyncio.to_thread(ready, content):
             return content, False
         while (remaining_ms := (deadline - time.monotonic()) * 1000) >= 1:  # 0 would mean "forever" to Playwright

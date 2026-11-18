@@ -6,9 +6,12 @@ from ..settings import settings
 from .guard import EgressGuard
 
 
-def upstream_for(url: str) -> str | None:
-    if not settings.proxy_url:
+def upstream_for(url: str, mode: str = "default") -> str | None:
+    """`mode` is the site's choice: direct, proxy (when one is configured), or default (PROXY_BYPASS decides)."""
+    if not settings.proxy_url or mode == "direct":
         return None
+    if mode == "proxy":
+        return settings.proxy_url
     host = urlsplit(url).hostname or ""
     # Exact host or a real subdomain: "evil-toscrape.com" must not match "toscrape.com".
     if any(host == site or host.endswith("." + site) for site in settings.proxy_bypass):
@@ -16,12 +19,12 @@ def upstream_for(url: str) -> str | None:
     return settings.proxy_url
 
 
-def curl_proxy(url: str, guard: EgressGuard) -> str:
-    return upstream_for(url) or f"socks5h://{guard.address}"  # socks5h: the guard resolves the host
+def curl_proxy(url: str, guard: EgressGuard, mode: str = "default") -> str:
+    return upstream_for(url, mode) or f"socks5h://{guard.address}"  # socks5h: the guard resolves the host
 
 
-def browser_proxy(url: str, guard: EgressGuard) -> dict[str, str]:
-    upstream = upstream_for(url)
+def browser_proxy(url: str, guard: EgressGuard, mode: str = "default") -> dict[str, str]:
+    upstream = upstream_for(url, mode)
     return playwright_proxy(upstream) if upstream else {"server": f"socks5://{guard.address}"}
 
 
