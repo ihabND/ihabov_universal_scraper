@@ -59,7 +59,6 @@
   const statusBar = $("#status");
   const tabBar = $("#tabs");
   const view = $("#view");
-  const jsonHosts = $$(".site").map((site) => site.dataset.host);
   const mode = () => $("input[name=mode]:checked").value;
   const browser = () => $("input[name=browser]:checked").value;
   const hostOf = (url) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch (e) { return ""; } };
@@ -194,11 +193,6 @@
       keyInput.focus();
       return showError(401, "Add your API key first", "Paste it into the API key field. It is kept in this browser only.");
     }
-    if (mode() === "json" && !jsonHosts.includes(hostOf(url))) {
-      return showError(400, "JSON is not available for this site",
-        "Structured data works on the supported sites in the list. Any other page can be scraped as HTML.",
-        { label: "Switch to HTML", run: () => { setOption("mode", "html"); run(); } });
-    }
     if (inFlight) inFlight.abort();
     const controller = new AbortController();
     inFlight = controller;
@@ -256,8 +250,7 @@
     const switchTo = (name, value, label) => ({ label, run: () => { setOption(name, value); run(); } });
     const known = {
       401: ["The API key was rejected", { label: "Check the key", run: () => keyInput.focus() }],
-      400: [detail && detail.startsWith("JSON") ? "JSON is not available for this site" : "The scraper rejected the URL",
-        request.mode === "json" ? switchTo("mode", "html", "Switch to HTML") : null],
+      400: ["The scraper rejected the request", null],
       403: ["That address is not allowed", null],
       413: ["The page is too large", null],
       415: ["That is not an HTML page", null],

@@ -82,4 +82,18 @@ def ready_check(parser: Parser, url: str) -> Callable[[bytes], bool]:
 # isort: off
 from . import webscraper_io, scrapeme, books_toscrape, quotes_toscrape  # noqa: E402, F401
 from . import vulkan, iponcomp, allrecipes, imdb  # noqa: E402, F401
+
 # isort: on
+from .embedded import embedded_data  # noqa: E402
+
+# Every other page in JSON mode: the structured data it carries.
+GENERIC = Parser(
+    host="*",
+    path=re.compile(".*"),
+    example="https://www.bbc.com/news/technology",
+    parse=embedded_data,
+    label="Any other page",
+    pages="Any page without a site parser",
+    fields="title, json_ld, next_data, yt_initial_data, initial_state, preloaded_state, apollo_state "
+    "(whichever the page has)",
+)

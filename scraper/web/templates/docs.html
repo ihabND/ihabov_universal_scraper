@@ -20,7 +20,7 @@
     <div class="content">
       <span class="eyebrow">API reference</span>
       <h1>One endpoint, two kinds of output.</h1>
-      <p class="lede">Fetch any public web page and get back its formatted HTML, or, on supported sites, the page's data as structured JSON. The scraper uses a real browser's network fingerprint, follows redirects safely, and blocks requests to internal addresses.</p>
+      <p class="lede">Fetch any public web page and get back its formatted HTML, or the page's data as structured JSON. The scraper uses a real browser's network fingerprint, follows redirects safely, and blocks requests to internal addresses.</p>
 
       <h2 id="base-url">Base URL</h2>
       <div class="codeblock"><pre class="code" id="code-base">https://ihabov-universal-scraper.fly.dev</pre><button class="tool copy" type="button" data-copy-target="code-base">Copy</button></div>
@@ -42,11 +42,11 @@
           </tr>
           <tr>
             <td><code>mode</code></td><td>string</td><td>No</td>
-            <td><code>html</code> (default): the full HTML, formatted, as one string in <code>content</code>.<br><code>json</code>: the page's data as structured JSON in <code>parsed</code>. Only works on <a href="#json">supported sites</a>.</td>
+            <td><code>html</code> (default): the full HTML, formatted, as one string in <code>content</code>.<br><code>json</code>: the page's data as structured JSON in <code>parsed</code>, see <a href="#json">JSON mode</a>.</td>
           </tr>
           <tr>
             <td><code>browser</code></td><td>string</td><td>No</td>
-            <td><code>auto</code> (default): fetch the page normally, and only if the site blocks it (a bot check, or status <code>202</code>, <code>403</code>, <code>406</code>, <code>429</code> or <code>503</code>), try again with a real headless browser. With <code>mode=json</code>, also when a page that loaded fine doesn't contain the expected data (an error page like a <code>404</code> is not retried). What worked is remembered per site for a day, so the next request starts there.<br><code>never</code>: don't use the browser.<br><code>always</code>: go straight to the browser, for sites you know need it. Slower: a few seconds per page.</td>
+            <td><code>auto</code> (default): fetch the page normally; if the site blocks it (a bot check, or status <code>202</code>, <code>403</code>, <code>406</code>, <code>429</code> or <code>503</code>), try again with a Safari fingerprint, then with a real headless browser. The browser is also used when a page comes back nearly empty because JavaScript builds it, and with <code>mode=json</code> when a page that loaded fine doesn't contain the expected data (an error page like a <code>404</code> is not retried). What worked is remembered per site for a day, so the next request starts there.<br><code>never</code>: don't use the browser.<br><code>always</code>: go straight to the browser, for sites you know need it. Slower: a few seconds per page.</td>
           </tr>
         </table>
       </div>
@@ -59,7 +59,7 @@
           <tr><td><code>url</code></td><td>string</td><td>The normalized URL that was scraped.</td></tr>
           <tr><td><code>status_code</code></td><td>integer</td><td>The HTTP status the <em>target site</em> returned.</td></tr>
           <tr><td><code>ok</code></td><td>boolean</td><td><code>true</code> if the target site answered with a <code>2xx</code> status and the page isn't a bot check.</td></tr>
-          <tr><td><code>fetched_with</code></td><td>string</td><td><code>http</code> for a normal fetch, <code>browser</code> when the headless browser was used.</td></tr>
+          <tr><td><code>fetched_with</code></td><td>string</td><td><code>http</code> for a normal fetch, <code>http-safari</code> for a plain fetch with a Safari fingerprint, <code>browser</code> when the headless browser was used.</td></tr>
           <tr><td><code>content</code></td><td>string or null</td><td>The formatted HTML with <code>mode=html</code>, otherwise <code>null</code>.</td></tr>
           <tr><td><code>parsed</code></td><td>object, array of objects or null</td><td>The page's data with <code>mode=json</code>, otherwise <code>null</code>. See <a href="#json">JSON mode</a>.</td></tr>
         </table>
@@ -102,7 +102,7 @@
       <p>A batch counts as one request per URL against your <a href="#rate-limits">quota</a>, and is refused as a whole with <code>429</code> if it doesn't fit. To be gentle on the sites you scrape, at most 4 URLs of one site are fetched at the same time, started at least a quarter of a second apart. Batches that need the browser take longer: allow a few minutes for 50 such URLs.</p>
 
       <h2 id="json">JSON mode</h2>
-      <p>With <code>mode=json</code>, pages on these sites come back as structured JSON. Other sites return <code>400</code>, and the scraper checks this before fetching the page.</p>
+      <p>With <code>mode=json</code>, pages on these sites come back with the fields listed. Any other page comes back as the structured data it carries for its own scripts, whichever it has: <code>title</code>, <code>json_ld</code> (schema.org items), <code>next_data</code> (Next.js), <code>yt_initial_data</code> (YouTube), <code>initial_state</code>, <code>preloaded_state</code> or <code>apollo_state</code>. Many pages that look empty without JavaScript carry their data this way. A page with none of it is a <code>502</code>.</p>
       <div class="tablewrap">
         <table>
           <tr><th>Site</th><th>Pages</th><th><code>parsed</code> is</th></tr>
@@ -146,7 +146,7 @@
       <div class="tablewrap">
         <table>
           <tr><th>Status</th><th>Meaning</th></tr>
-          <tr><td><code>400</code></td><td>The URL is invalid, or uses a scheme other than <code>http</code>/<code>https</code>, or <code>mode=json</code> was sent for a page that isn't <a href="#json">supported</a>, or <code>browser=always</code> was sent to a server where the browser is turned off.</td></tr>
+          <tr><td><code>400</code></td><td>The URL is invalid, or uses a scheme other than <code>http</code>/<code>https</code>, or <code>browser=always</code> was sent to a server where the browser is turned off.</td></tr>
           <tr><td><code>401</code></td><td>The API key is missing or wrong.</td></tr>
           <tr><td><code>403</code></td><td>The URL, or a page it redirects to, points to a private or internal address (like <code>localhost</code> or <code>192.168.x.x</code>), which is not allowed.</td></tr>
           <tr><td><code>413</code></td><td>The page is larger than 5 MB.</td></tr>

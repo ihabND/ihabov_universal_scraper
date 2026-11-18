@@ -12,7 +12,7 @@ from ..fetchers.base import Fetcher, FetchRequest
 from ..net.urls import site_of
 from ..parsers import Parsed, Parser, parse_page, ready_check, seed_tier
 from ..store.profiles import SiteProfile, get_profile, save_profile
-from .errors import BlockedError, BrowserBusyError, BrowserDisabledError, FetchError, ParseError
+from .errors import BlockedError, BrowserBusyError, BrowserDisabledError, FetchError, ParseError, ScrapeError
 from .page import Page, looks_empty
 
 # Failures another fetcher might not have. Anything else (an internal address, a PDF, a page that is
@@ -47,7 +47,7 @@ async def fetch(
     usable = clearance if clearance and clearance.plain_ok else None
     req = FetchRequest(url, owner, usable, ready_check(parser, url) if parser else None, queue_timeout=queue_timeout)
     blocked = unparsed = None
-    errors = []
+    errors: list[ScrapeError] = []  # a parser's complaint about a page goes in here too
     # More capable fetchers first, then the cheaper ones in case the remembered route fails.
     for i in [*range(start, len(tiers)), *reversed(range(start))]:
         tier = tiers[i]
@@ -68,10 +68,11 @@ async def fetch(
         if parser:
             try:
                 parsed = await asyncio.to_thread(parse_page, parser, page)
-            except ParseError:
+            except ParseError as e:
                 if tier.renders or not page.ok:  # an error page, or a page that already ran its JavaScript
                     raise
                 unparsed = page
+                errors.append(e)
                 continue
         elif not tier.renders and page.ok and await asyncio.to_thread(looks_empty, page):
             unparsed = page  # built by JavaScript, so a fetcher that runs it may get the content
@@ -93,13 +94,11 @@ async def fetch(
     if unparsed and not parser:
         return unparsed, None  # the plain page is the best there is
     busy = next((e for e in errors if isinstance(e, BrowserBusyError)), None)
-    if blocked and busy:
+    if busy and (blocked or unparsed):
         raise busy  # the browser never got its turn, so this is "try again soon", not a block
     if blocked and parser:
         hint = "every way of fetching this page" if any(t.renders for t in tiers) else "it; try browser=auto"
         raise BlockedError(f"The site's bot protection blocked {hint}.")
     if blocked:
         return blocked, None
-    if errors:
-        raise errors[0]
-    raise ParseError("Couldn't find the expected data on this page.")
+    raise next((e for e in errors if not isinstance(e, ParseError)), errors[0])

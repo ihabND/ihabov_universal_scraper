@@ -13,11 +13,11 @@ from ..api.schemas import BatchItem, BatchResponse, BrowserOption, Mode, ScrapeR
 from ..fetchers.base import Fetcher
 from ..net.guard import EgressGuard
 from ..net.urls import normalize_url, site_of
-from ..parsers import PARSERS, Parser, find_parser, parse_page
+from ..parsers import GENERIC, Parser, find_parser, parse_page
 from ..settings import settings
 from ..store.cache import get_page, set_page
 from . import ladder
-from .errors import BrowserDisabledError, InvalidURLError, ParseError, ScrapeError, UnsupportedSiteError
+from .errors import BrowserDisabledError, InvalidURLError, ParseError, ScrapeError
 from .page import Page
 
 QUEUE_SECONDS = 15  # how long a request waits for a free browser
@@ -73,10 +73,7 @@ class Scraper:
         normalized = normalize_url(url)
         if normalized is None:
             raise InvalidURLError("Invalid URL, only HTTP and HTTPS.")
-        parser = find_parser(normalized) if mode == "json" else None
-        if mode == "json" and parser is None:
-            supported = ", ".join(dict.fromkeys(p.host for p in PARSERS))
-            raise UnsupportedSiteError(f"JSON isn't available for this page. Supported sites: {supported}.")
+        parser = (find_parser(normalized) or GENERIC) if mode == "json" else None
         tiers = self.tiers_for(browser)
         key = (normalized, mode, browser)
         task = self.inflight.get(key)

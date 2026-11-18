@@ -5,7 +5,7 @@ from itertools import pairwise
 import pytest
 
 from scraper.antibot.clearance import Clearance, save_clearance
-from scraper.core.errors import BrowserDisabledError, UnsupportedSiteError
+from scraper.core.errors import BrowserDisabledError
 from scraper.core.page import Page
 from scraper.core.service import Scraper, SiteGate
 from scraper.net.guard import EgressGuard
@@ -75,10 +75,14 @@ async def test_a_cancelled_caller_does_not_cancel_the_fetch_for_the_others(scrap
     assert (await second).ok and http.urls == [QUOTES]
 
 
-async def test_json_for_an_unsupported_site_is_refused_before_fetching(scraper, http):
-    with pytest.raises(UnsupportedSiteError):
-        await scraper.scrape("https://example.com/", "json")
-    assert http.urls == []
+async def test_json_on_a_site_without_a_parser_reads_the_page_s_structured_data(scraper, http, monkeypatch):
+    page = b'<title>T</title><script id="__NEXT_DATA__" type="application/json">{"props": {}}</script>'
+    monkeypatch.setattr(http, "fetch", lambda req: _page(req.url, page))
+    assert (await scraper.scrape("https://example.com/", "json")).parsed == {"title": "T", "next_data": {"props": {}}}
+
+
+async def _page(url: str, content: bytes) -> Page:
+    return Page(url, 200, content)
 
 
 async def test_browser_always_without_a_browser_is_refused(scraper):

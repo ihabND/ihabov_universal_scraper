@@ -9,10 +9,6 @@ class InvalidURLError(ScrapeError):
     status_code = 400
 
 
-class UnsupportedSiteError(ScrapeError):
-    status_code = 400
-
-
 class BrowserDisabledError(ScrapeError):
     status_code = 400
 

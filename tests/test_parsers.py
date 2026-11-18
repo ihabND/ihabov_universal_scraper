@@ -5,7 +5,7 @@ import pytest
 
 from scraper.core.errors import ParseError
 from scraper.core.page import Page
-from scraper.parsers import PARSERS, find_parser, parse_page, ready_check, seed_tier
+from scraper.parsers import GENERIC, PARSERS, find_parser, parse_page, ready_check, seed_tier
 from scraper.parsers.text import eu_number
 
 FIXTURES = Path(__file__).parent / "fixtures" / "parsers"
@@ -76,3 +76,35 @@ def test_imdb_starts_in_the_browser():
 )
 def test_serbian_number_format(text, number):
     assert eu_number(text) == number
+
+
+# ---- Any other page: the structured data it carries -----------------------------------------
+
+NEXT_PAGE = (
+    b'<html><head><title>Laptops</title></head><body><div id="__next"></div>'
+    b'<script id="__NEXT_DATA__" type="application/json">{"props": {"pageProps": {"items": [{"name": "X1"}]}}}</script>'
+    b'<script>var ytInitialData = {"contents": {"title": "NASA"}};</script>'
+    b'<script>window.__INITIAL_STATE__ = {"tag": "photography"}; window.other = 1;</script>'
+    b"</body></html>"
+)
+
+
+def test_any_other_page_gives_its_embedded_data():
+    parsed = parse_page(GENERIC, Page("https://www.target.com/s?searchTerm=laptop", 200, NEXT_PAGE))
+    assert parsed == {
+        "title": "Laptops",
+        "next_data": {"props": {"pageProps": {"items": [{"name": "X1"}]}}},
+        "yt_initial_data": {"contents": {"title": "NASA"}},
+        "initial_state": {"tag": "photography"},
+    }
+
+
+def test_any_other_page_gives_its_json_ld():
+    url, page, _ = load(FIXTURES / "movie.json")
+    parsed = parse_page(GENERIC, Page("https://example.com/film", 200, page.content))
+    assert parsed["json_ld"][0]["name"] == "The Shawshank Redemption"
+
+
+def test_a_page_without_structured_data_is_a_parse_error():
+    with pytest.raises(ParseError):
+        parse_page(GENERIC, Page("https://example.com/", 200, b"<html><title>Example</title><p>Hi</p></html>"))

@@ -92,8 +92,9 @@ def test_scrape_json(client, fetched):
     assert body["parsed"] == [{"quote": "Hi", "author": "Ann", "tags": []}]
 
 
-def test_json_for_an_unsupported_site_is_400_without_fetching(client, fetched):
-    assert scrape(client, "https://example.com/", mode="json").status_code == 400 and fetched == []
+def test_json_on_a_page_without_structured_data_is_a_502(client, fetched):
+    response = scrape(client, "https://example.com/", mode="json")
+    assert response.status_code == 502 and "structured data" in response.json()["detail"]
 
 
 def test_internal_addresses_are_refused(client):
