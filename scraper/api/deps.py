@@ -15,6 +15,8 @@ from ..store import quota
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 admin_key_header = APIKeyHeader(name="X-Admin-Key", auto_error=False)
 
+TEST_ONLY_SCRAPE = "The test key only works with GET /scrape."
+
 logger = logging.getLogger(__name__)
 if not settings.api_keys:
     logger.warning("API_KEYS is empty, every request will be rejected.")
@@ -23,6 +25,10 @@ if not settings.api_keys:
 def is_valid_key(key: str | None, keys: list[str]) -> bool:
     # Compare with every key (a list, not a short-circuiting generator), so timing doesn't tell which matched.
     return bool(key) and any([secrets.compare_digest(key.encode(), k.encode()) for k in keys])
+
+
+def is_test_key(api_key: str | None) -> bool:
+    return bool(settings.test_key) and is_valid_key(api_key, [settings.test_key])
 
 
 def key_id(api_key: str) -> str:
@@ -35,16 +41,23 @@ def client_ip(request: Request) -> str:
     return forwarded or (request.client.host if request.client else "unknown")
 
 
-async def charge(limits: list[RateLimitItem], *ids: str, cost: int = 1) -> None:
-    exceeded = await quota.take(limits, *ids, cost=cost)
+async def charge(limits: list[RateLimitItem], *ids: str, cost: int = 1, fail_open: bool | None = None) -> None:
+    exceeded = await quota.take(limits, *ids, cost=cost, fail_open=fail_open)
     if exceeded:
         limit, reset_at = exceeded
         retry_after = max(1, int(reset_at - time.time()) + 1)
         raise HTTPException(429, f"Rate limit exceeded: {limit}", headers={"Retry-After": str(retry_after)})
 
 
-async def authorize(request: Request, api_key: str | None, cost: int = 1) -> str:
-    """The owner id of a valid key. A missing or wrong key is charged to the caller's IP, so guessing stays slow."""
+async def authorize(request: Request, api_key: str | None, cost: int = 1, *, allow_test: bool = False) -> str:
+    """The owner id of a valid key. A missing or wrong key is charged to the caller's IP, so guessing stays slow.
+    The public test key is refused unless the caller allows it, and has its own limits, which never fail open."""
+    if is_test_key(api_key):
+        if not allow_test:
+            raise HTTPException(403, TEST_ONLY_SCRAPE)
+        await charge(quota.TEST_IP_LIMITS, "test-ip", client_ip(request), fail_open=False)
+        await charge(quota.TEST_TOTAL_LIMITS, "test-total", fail_open=False)
+        return key_id(api_key)
     if not is_valid_key(api_key, settings.api_keys):
         await charge(quota.IP_LIMITS, "ip", client_ip(request))
         raise HTTPException(401, "Invalid or missing API key")

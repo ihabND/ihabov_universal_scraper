@@ -79,6 +79,7 @@ def test_a_forwarded_ip_is_ignored_unless_that_header_is_trusted(client, monkeyp
 
 def test_scrape_html(client, fetched):
     body = scrape(client, "https://example.com/page").json()
+    assert "final_url" not in body  # internal: where redirects ended up
     assert (body["url"], body["status_code"], body["ok"], body["fetched_with"]) == (
         "https://example.com/page",
         200,
@@ -175,3 +176,56 @@ def test_strategies_need_an_api_key_to_read_and_the_admin_key_to_edit(client, tm
     strategies.close()
     monkeypatch.setattr(settings, "strategy_db", str(tmp_path))  # a folder, so the store can't be opened
     assert client.put("/api/sites/shop.example/pins", json=pins, headers=ADMIN).status_code == 503
+
+
+@pytest.fixture
+def test_key(monkeypatch):
+    monkeypatch.setattr(settings, "test_key", "demo-key")
+    return {"X-API-Key": "demo-key"}
+
+
+def test_the_test_key_works_on_the_example_sites_only(client, fetched, test_key):
+    ok = client.get("/scrape", params={"url": "https://books.toscrape.com/"}, headers=test_key)
+    assert ok.status_code == 200
+    for url in ("https://shop.example/", "https://evil-toscrape.com/"):
+        refused = client.get("/scrape", params={"url": url}, headers=test_key)
+        assert refused.status_code == 403
+        assert refused.json()["detail"].startswith("The test key works on the example sites")
+    assert fetched == ["https://books.toscrape.com/"]  # nothing fetched for the refused ones
+
+
+def test_the_test_key_has_its_own_per_ip_limit(client, fetched, test_key, monkeypatch):
+    monkeypatch.setattr(quota, "TEST_IP_LIMITS", parse_many("2/hour"))
+    codes = [
+        client.get("/scrape", params={"url": f"https://books.toscrape.com/{i}"}, headers=test_key).status_code
+        for i in range(3)
+    ]
+    assert codes == [200, 200, 429]
+
+
+def test_the_test_key_only_works_on_get_scrape(client, fetched, test_key):
+    batch = client.post("/scrape/batch", json={"urls": ["https://books.toscrape.com/"]}, headers=test_key)
+    sites = client.get("/api/sites", headers=test_key)
+    assert batch.status_code == sites.status_code == 403 and fetched == []
+
+
+def test_the_test_key_fails_closed_without_rate_limits(client, fetched, test_key, monkeypatch):
+    async def down(*args, **kwargs):
+        raise ConnectionError("store down")
+
+    monkeypatch.setattr(quota.limiter, "test", down)
+    monkeypatch.setattr(settings, "rate_limit_fail_open", True)
+    assert client.get("/scrape", params={"url": "https://books.toscrape.com/"}, headers=test_key).status_code == 429
+    assert scrape(client, "https://example.com/").status_code == 200  # a full key still fails open
+
+
+class Redirected(FakeHttp):
+    async def fetch(self, req):
+        self.urls.append(req.url)
+        return Page("https://elsewhere.example/", 200, QUOTES)
+
+
+def test_the_test_key_refuses_a_page_that_ended_up_elsewhere(client, test_key, monkeypatch):
+    monkeypatch.setattr(client.app.state.scraper, "tiers", [Redirected()])
+    response = client.get("/scrape", params={"url": "https://books.toscrape.com/go"}, headers=test_key)
+    assert response.status_code == 403 and "elsewhere" not in response.text

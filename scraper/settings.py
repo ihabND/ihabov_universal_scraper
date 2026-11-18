@@ -25,6 +25,10 @@ class Settings:
     batch_workers: int  # per API key
     strategy_db: str  # the SQLite file with every site's strategy
     admin_keys: list[str]  # keys that may edit strategies
+    test_key: str | None  # a public key for the home page: GET /scrape on the example sites only
+    test_key_sites: tuple[str, ...]
+    test_key_limits: str  # per client IP
+    test_key_total_limits: str  # all visitors together
 
 
 def env_list(name: str) -> list[str]:
@@ -35,6 +39,10 @@ def env_on(name: str) -> bool:
     return os.environ.get(name, "on").lower() not in ("off", "false", "0", "no")
 
 
+def hosts(name: str) -> tuple[str, ...]:
+    return tuple(h.lower().lstrip(".") for h in env_list(name))
+
+
 def load() -> Settings:
     proxy = os.environ.get("PROXY_URL", "").strip()
     return Settings(
@@ -42,7 +50,7 @@ def load() -> Settings:
         redis_url=os.environ.get("REDIS_URL") or None,
         # Providers often show the proxy as user:pass@host:port; curl assumes http:// for that too.
         proxy_url=(proxy if "://" in proxy else f"http://{proxy}") if proxy else None,
-        proxy_bypass=tuple(h.lower().lstrip(".") for h in env_list("PROXY_BYPASS")) or DEFAULT_PROXY_BYPASS,
+        proxy_bypass=hosts("PROXY_BYPASS") or DEFAULT_PROXY_BYPASS,
         ip_rate_limit=os.environ.get("IP_RATE_LIMIT", "10/minute"),
         key_rate_limits=os.environ.get("KEY_RATE_LIMITS", "300/minute;10000/day"),
         rate_limit_fail_open=env_on("RATE_LIMIT_FAIL_OPEN"),
@@ -57,6 +65,11 @@ def load() -> Settings:
         batch_workers=int(os.environ.get("BATCH_WORKERS", "8")),
         strategy_db=os.environ.get("STRATEGY_DB", "data/strategies.db"),
         admin_keys=env_list("ADMIN_KEYS"),
+        test_key=os.environ.get("TEST_KEY", "").strip() or None,
+        # The practice sites: they need no proxy, and they exist to be scraped.
+        test_key_sites=hosts("TEST_KEY_SITES") or DEFAULT_PROXY_BYPASS,
+        test_key_limits=os.environ.get("TEST_KEY_LIMITS", "30/hour"),
+        test_key_total_limits=os.environ.get("TEST_KEY_TOTAL_LIMITS", "1000/day"),
     )
 
 

@@ -117,7 +117,9 @@ class Scraper:
             strategies.record_use(site, page.fetched_with, page.status_code, time.monotonic() - started, page.ok)
             self.start_check(url, site, parser, strategy)
             await set_page(url, browser, page, strategy)
-        result = ScrapeResponse(url=url, status_code=page.status_code, ok=page.ok, fetched_with=page.fetched_with)
+        result = ScrapeResponse(
+            url=url, status_code=page.status_code, ok=page.ok, fetched_with=page.fetched_with, final_url=page.url
+        )
         if parser:
             result.parsed = parsed
         else:

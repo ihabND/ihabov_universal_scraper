@@ -32,6 +32,12 @@ def normalize_url(url: str) -> str | None:
     return urlunsplit((parts.scheme.lower(), netloc, quote(parts.path or "/", safe=PATH_SAFE_CHARS), parts.query, ""))
 
 
+def host_in(host: str, sites) -> bool:
+    """The exact host or a real subdomain of one of the sites: \"evil-toscrape.com\" doesn't match \"toscrape.com\"."""
+    host = host.lower()
+    return any(host == site or host.endswith("." + site) for site in sites)
+
+
 def site_of(url: str) -> str:
     return (urlsplit(url).hostname or "").removeprefix("www.")
 

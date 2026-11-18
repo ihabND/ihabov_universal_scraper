@@ -12,6 +12,8 @@ from . import cache
 
 IP_LIMITS = parse_many(settings.ip_rate_limit)
 KEY_LIMITS = parse_many(settings.key_rate_limits)
+TEST_IP_LIMITS = parse_many(settings.test_key_limits)
+TEST_TOTAL_LIMITS = parse_many(settings.test_key_total_limits)
 
 limiter = FixedWindowRateLimiter(
     storage_from_string(
@@ -22,10 +24,15 @@ limiter = FixedWindowRateLimiter(
 )
 
 
-async def take(limits: list[RateLimitItem], *ids: str, cost: int = 1) -> tuple[str, float] | None:
-    """Charge `cost` against every limit. None when allowed, otherwise the limit and when its window resets."""
+async def take(
+    limits: list[RateLimitItem], *ids: str, cost: int = 1, fail_open: bool | None = None
+) -> tuple[str, float] | None:
+    """Charge `cost` against every limit. None when allowed, otherwise the limit and when its window resets.
+    `fail_open` says what an unreachable store means; RATE_LIMIT_FAIL_OPEN decides when it's None."""
+    if fail_open is None:
+        fail_open = settings.rate_limit_fail_open
     if settings.redis_url and not cache.available():
-        return unavailable()
+        return unavailable(fail_open)
     try:
         # Check every limit before charging any, so a refused request uses up nothing.
         for item in limits:
@@ -35,9 +42,9 @@ async def take(limits: list[RateLimitItem], *ids: str, cost: int = 1) -> tuple[s
             await limiter.hit(item, *ids, cost=cost)
     except Exception as e:  # the storage is unreachable, whatever the client library raises
         cache.pause("rate limiting", e)
-        return unavailable()
+        return unavailable(fail_open)
     return None
 
 
-def unavailable() -> tuple[str, float] | None:
-    return None if settings.rate_limit_fail_open else ("rate limits are unavailable", time.time() + cache.PAUSE_SECONDS)
+def unavailable(fail_open: bool) -> tuple[str, float] | None:
+    return None if fail_open else ("rate limits are unavailable", time.time() + cache.PAUSE_SECONDS)

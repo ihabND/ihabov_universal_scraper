@@ -4,6 +4,7 @@ from urllib.parse import unquote, urlsplit
 
 from ..settings import settings
 from .guard import EgressGuard
+from .urls import host_in
 
 
 def upstream_for(url: str, mode: str = "default") -> str | None:
@@ -12,9 +13,7 @@ def upstream_for(url: str, mode: str = "default") -> str | None:
         return None
     if mode == "proxy":
         return settings.proxy_url
-    host = urlsplit(url).hostname or ""
-    # Exact host or a real subdomain: "evil-toscrape.com" must not match "toscrape.com".
-    if any(host == site or host.endswith("." + site) for site in settings.proxy_bypass):
+    if host_in(urlsplit(url).hostname or "", settings.proxy_bypass):
         return None
     return settings.proxy_url
 

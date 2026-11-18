@@ -1,8 +1,12 @@
-from fastapi import APIRouter, Request, Security
+from urllib.parse import urlsplit
+
+from fastapi import APIRouter, HTTPException, Request, Security
 
 from ..net.proxy import proxy_status
+from ..net.urls import host_in
+from ..settings import settings
 from ..store.cache import redis_status
-from .deps import api_key_header, authorize
+from .deps import api_key_header, authorize, is_test_key
 from .schemas import BatchRequest, BatchResponse, BrowserOption, Mode, ScrapeResponse
 
 router = APIRouter()
@@ -28,8 +32,21 @@ async def scrape(
     browser: BrowserOption = "auto",
     api_key: str | None = Security(api_key_header),
 ):
-    owner = await authorize(request, api_key)
-    return await request.app.state.scraper.scrape(url, mode, browser, owner=owner)
+    owner = await authorize(request, api_key, allow_test=True)
+    test = is_test_key(api_key)
+    if test:
+        check_test_site(url)
+    result = await request.app.state.scraper.scrape(url, mode, browser, owner=owner)
+    if test:
+        check_test_site(result.final_url or result.url)  # a redirect must not make the public key a proxy
+    return result
+
+
+def check_test_site(url: str) -> None:
+    host = urlsplit(url.strip()).hostname or ""
+    if not host_in(host, settings.test_key_sites):
+        sites = ", ".join(settings.test_key_sites)
+        raise HTTPException(403, f"The test key works on the example sites only: {sites}.")
 
 
 @router.post("/scrape/batch", response_model=BatchResponse)

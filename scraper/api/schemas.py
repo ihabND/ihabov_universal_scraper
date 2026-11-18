@@ -16,6 +16,8 @@ class ScrapeResponse(BaseModel):
     fetched_with: str = "http"
     content: str | None = None
     parsed: dict | list[dict] | None = None
+    # Where redirects ended up; `url` is the page asked for. Kept out of the JSON.
+    final_url: str | None = Field(default=None, exclude=True)
 
 
 class BatchRequest(BaseModel):
