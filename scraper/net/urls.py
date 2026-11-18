@@ -6,7 +6,7 @@ import logging
 import socket
 from urllib.parse import quote, urlsplit, urlunsplit
 
-from ..core.errors import BlockedURLError, FetchError, InvalidURLError
+from ..core.errors import BlockedURLError, HostNotFoundError, InvalidURLError
 
 ALLOWED_SCHEMES = {"http", "https"}
 PATH_SAFE_CHARS = "/%:@!$&'()*+,;=~"
@@ -42,7 +42,7 @@ async def resolve_public(host: str) -> list[str]:
     try:
         infos = await asyncio.get_running_loop().getaddrinfo(host, None, type=socket.SOCK_STREAM)
     except socket.gaierror:
-        raise FetchError(f"Could not resolve {host}.") from None
+        raise HostNotFoundError(f"Could not resolve {host}.") from None
     ips = [info[4][0] for info in infos]
     if not all(is_public(ip) for ip in ips):
         logger.warning("Blocked a connection to non-public host %s", host)

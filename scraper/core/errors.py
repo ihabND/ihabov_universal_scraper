@@ -29,6 +29,10 @@ class FetchError(ScrapeError):
     pass
 
 
+class HostNotFoundError(ScrapeError):  # not a FetchError: no other fetcher would find the host either
+    pass
+
+
 class ParseError(ScrapeError):
     pass
 

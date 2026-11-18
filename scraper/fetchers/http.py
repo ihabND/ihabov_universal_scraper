@@ -25,6 +25,7 @@ BACKOFF_SECONDS = 1
 RETRY_STATUS_CODES = {429, 502, 503, 504}
 REDIRECT_CODES = {301, 302, 303, 307, 308}
 CURLE_FILESIZE_EXCEEDED = 63
+CURLE_PROXY = 97  # the egress guard couldn't connect to the site
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +112,8 @@ class HttpFetcher:
             if attempt == self.retries or time.monotonic() + wait + 1 > deadline:
                 if response is not None:
                     return response
+                if getattr(error, "code", None) == CURLE_PROXY:
+                    raise FetchError("Could not connect to the site.") from error
                 raise FetchError(f"Could not fetch the page: {error}") from error
             logger.info(
                 "Attempt %d for %s failed (%s), retrying", attempt + 1, url, response.status_code if response else error

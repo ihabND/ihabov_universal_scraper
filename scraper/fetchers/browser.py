@@ -86,12 +86,12 @@ class BrowserFetcher:
         return self.browser
 
     async def fetch(self, req: FetchRequest) -> Page:
+        await validate_url(req.url)
         try:
             await asyncio.wait_for(self.slots.acquire(), req.queue_timeout)
         except TimeoutError:
             raise BrowserBusyError("All browsers are busy right now, try again in a moment.") from None
         try:
-            await validate_url(req.url)
             return await self.load(req)
         finally:
             self.slots.release()
@@ -134,6 +134,8 @@ class BrowserFetcher:
             page = Page(tab.url, last.status, content, self.name, complete, earned)
             content_type = last.headers.get("content-type", "")
         except self.api.Error as e:
+            if "ERR_SOCKS_CONNECTION_FAILED" in str(e):  # the egress guard couldn't connect to the site
+                raise FetchError("Could not connect to the site.") from e
             raise FetchError(f"The browser could not load the page: {first_line(e)}") from e
         finally:
             with suppress(self.api.Error):

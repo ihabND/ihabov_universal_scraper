@@ -119,11 +119,12 @@ def test_cookies_are_kept_only_after_a_block_or_a_bot_check():
     assert not keeps_cookies(after_block=True, challenged=True, content=challenge)
 
 
-async def test_a_busy_browser_answers_503_after_the_queue_timeout():
+async def test_a_busy_browser_answers_503_after_the_queue_timeout(monkeypatch):
+    monkeypatch.setattr(urls, "is_public", lambda ip: True)
     fetcher = BrowserFetcher(EgressGuard(), workers=1, warm=False)
     await fetcher.slots.acquire()
     with pytest.raises(BrowserBusyError):
-        await fetcher.fetch(FetchRequest("https://shop.example/", queue_timeout=0.01))
+        await fetcher.fetch(FetchRequest("http://127.0.0.1/", queue_timeout=0.01))
 
 
 # ---- With a real Chromium ------------------------------------------------------------------

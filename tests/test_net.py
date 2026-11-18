@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from scraper.core.errors import BlockedURLError, FetchError, InvalidURLError
+from scraper.core.errors import BlockedURLError, HostNotFoundError, InvalidURLError
 from scraper.net import guard as guard_module
 from scraper.net import proxy, urls
 from scraper.net.guard import EgressGuard
@@ -48,8 +48,8 @@ async def test_only_http_and_https_are_allowed():
         await validate_url("file:///etc/passwd")
 
 
-async def test_a_host_that_does_not_resolve_is_a_fetch_error_not_forbidden():
-    with pytest.raises(FetchError, match="resolve"):
+async def test_a_host_that_does_not_resolve_is_a_final_502_not_forbidden():
+    with pytest.raises(HostNotFoundError, match="resolve"):  # final: no other fetcher would find it either
         await validate_url("https://nothing.invalid/")
 
 
