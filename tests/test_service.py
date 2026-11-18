@@ -9,7 +9,7 @@ from scraper.core.errors import BrowserDisabledError
 from scraper.core.page import Page
 from scraper.core.service import Scraper, SiteGate
 from scraper.net.guard import EgressGuard
-from scraper.store import cache
+from scraper.store import cache, strategies
 
 pytestmark = pytest.mark.anyio
 
@@ -130,3 +130,13 @@ def test_plain_http_with_the_safari_fingerprint_comes_before_the_browser():
     from scraper.fetchers import build_tiers
 
     assert [tier.name for tier in build_tiers(EgressGuard())] == ["http", "http-safari", "browser"]
+
+
+async def test_the_daily_check_updates_a_learned_start_and_flags_a_pinned_one(scraper):
+    strategies.learn("a.example", "start", "browser", "http got 403")
+    strategies.set_pins("b.example", {"start": "browser"})
+    for site in ("a.example", "b.example"):
+        await scraper.check(f"https://{site}/", site, None, strategies.strategy_for(site, "http"))
+    assert strategies.strategy_for("a.example", "http").start == "http"
+    assert strategies.strategy_for("b.example", "http").start == "browser"
+    assert "daily check" in strategies.get("b.example").flags["start"]["seen"]

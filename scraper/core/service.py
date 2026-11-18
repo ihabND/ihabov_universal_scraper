@@ -10,16 +10,17 @@ from dataclasses import dataclass, field
 from bs4 import BeautifulSoup
 
 from ..api.schemas import BatchItem, BatchResponse, BrowserOption, Mode, ScrapeResponse
-from ..fetchers.base import Fetcher
+from ..fetchers.base import Fetcher, FetchRequest
 from ..net.guard import EgressGuard
-from ..net.urls import normalize_url, site_of
+from ..net.urls import normalize_url, site_of, with_params
 from ..parsers import GENERIC, Parser, find_parser, parse_page, seed_tier
 from ..settings import settings
 from ..store import strategies
 from ..store.cache import get_page, set_page
 from . import ladder
 from .errors import BrowserDisabledError, InvalidURLError, ParseError, ScrapeError
-from .page import Page
+from .page import Page, looks_empty
+from .strategy import Strategy
 
 QUEUE_SECONDS = 15  # how long a request waits for a free browser
 BATCH_QUEUE_SECONDS = 120  # batch URLs wait longer
@@ -31,6 +32,7 @@ class Scraper:
     def __init__(self, tiers: list[Fetcher], guard: EgressGuard):
         self.tiers, self.guard = tiers, guard
         self.inflight: dict[tuple, asyncio.Task] = {}
+        self.checks: set[asyncio.Task] = set()  # daily checks running in the background
         self.site_gate = SiteGate()
         self.batch_slots = defaultdict(lambda: asyncio.Semaphore(settings.batch_workers))  # per API key
 
@@ -40,6 +42,8 @@ class Scraper:
             await tier.start()
 
     async def stop(self) -> None:
+        for check in self.checks:
+            check.cancel()
         for tier in self.tiers:
             await tier.stop()
         await self.guard.stop()
@@ -108,6 +112,7 @@ class Scraper:
                 strategies.record_use(site, "-", e.status_code, time.monotonic() - started, False)
                 raise
             strategies.record_use(site, page.fetched_with, page.status_code, time.monotonic() - started, page.ok)
+            self.start_check(url, site, parser, strategy)
             await set_page(url, browser, page, strategy)
         result = ScrapeResponse(url=url, status_code=page.status_code, ok=page.ok, fetched_with=page.fetched_with)
         if parser:
@@ -115,6 +120,39 @@ class Scraper:
         else:
             result.content = await asyncio.to_thread(prettify, page)
         return result
+
+    def cheapest(self, strategy: Strategy) -> Fetcher:
+        return next(t for t in ladder.arranged(self.tiers, strategy.fingerprints) if not t.renders)
+
+    def start_check(self, url: str, site: str, parser: Parser | None, strategy: Strategy) -> None:
+        """A site whose strategy skips the cheapest route gets that route tried again once a day, after the
+        request is served, so a strategy never goes stale and never slows a request down."""
+        render_name = parser.name if parser else ladder.HTML_RENDER
+        skips = strategy.start != self.cheapest(strategy).name or render_name in strategy.render
+        if skips and strategies.claim_check(site):
+            task = asyncio.create_task(self.check(url, site, parser, strategy))
+            self.checks.add(task)
+            task.add_done_callback(self.checks.discard)
+
+    async def check(self, url: str, site: str, parser: Parser | None, strategy: Strategy) -> None:
+        """Learns the cheapest route when it works now; a pin it disagrees with gets a flag."""
+        plain = self.cheapest(strategy)
+        try:
+            page = await plain.fetch(FetchRequest(with_params(url, strategy.url_params), strategy=strategy))
+            if not page.ok:
+                return
+            if strategy.start != plain.name:
+                strategies.learn(site, "start", plain.name, f"{plain.name} got {page.status_code} (daily check)")
+            render_name = parser.name if parser else ladder.HTML_RENDER
+            if render_name in strategy.render:
+                if parser:
+                    await asyncio.to_thread(parse_page, parser, page)
+                elif await asyncio.to_thread(looks_empty, page):
+                    return
+                render = sorted(set(strategy.render) - {render_name})
+                strategies.learn(site, "render", render, f"{plain.name}'s page had the data (daily check)")
+        except ScrapeError as e:
+            logger.info("%s: daily check found nothing new: %s", site, e)
 
     async def batch(self, urls: list[str], mode: Mode, browser: BrowserOption, owner: str) -> BatchResponse:
         """Every URL is scraped as a single request would be; failures are reported per URL."""
