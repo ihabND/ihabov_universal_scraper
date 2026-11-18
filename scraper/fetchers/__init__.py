@@ -1,8 +1,13 @@
+import logging
+from importlib.util import find_spec
+
 from ..net.guard import EgressGuard
 from ..settings import settings
 from .base import Fetcher
 from .browser import BrowserFetcher
 from .http import HttpFetcher
+
+logger = logging.getLogger(__name__)
 
 
 def build_tiers(guard: EgressGuard) -> list[Fetcher]:
@@ -19,4 +24,10 @@ def build_tiers(guard: EgressGuard) -> list[Fetcher]:
                 guard, workers=settings.browser_workers, engine=settings.browser_engine, warm=settings.browser_warm
             )
         )
+        if settings.stealth_browser and find_spec("patchright"):
+            # Patchright, a Playwright fork patched against automation detection, for sites that still block
+            # the browser. It starts on first use, so a second Chromium takes memory only once a site needs it.
+            tiers.append(BrowserFetcher(guard, name="stealth", engine="patchright", workers=1, warm=False))
+        elif settings.stealth_browser:
+            logger.warning("STEALTH_BROWSER is on but patchright is not installed; the stealth tier is off.")
     return tiers

@@ -5,7 +5,7 @@ import math
 from dataclasses import asdict, dataclass, field
 
 PROXY_MODES = ("default", "direct", "proxy")  # default follows PROXY_BYPASS
-START_TIERS = ("http", "http-safari", "browser")
+START_TIERS = ("http", "http-safari", "browser", "stealth")
 FINGERPRINTS = ("chrome", "safari")
 PLAIN_TIER = {"chrome": "http", "safari": "http-safari"}  # the fetcher of each fingerprint
 # 0 here means no limit to curl or Playwright, an instant failure, or a batch that never starts.
@@ -14,7 +14,7 @@ ABOVE_ZERO = {"request_timeout", "fetch_budget", "load_timeout", "batch_at_once"
 
 @dataclass
 class Strategy:
-    start: str = "http"  # the fetcher to start with: http, http-safari or browser
+    start: str = "http"  # the fetcher to start with: http, http-safari, browser or stealth
     render: list[str] = field(default_factory=list)  # page kinds that need JavaScript: parser names, or "html"
     fingerprints: list[str] = field(default_factory=lambda: ["chrome", "safari"])  # plain-HTTP fingerprints, in order
     proxy: str = "default"

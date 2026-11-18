@@ -255,3 +255,13 @@ async def test_an_error_page_is_not_sent_to_the_browser(http, browser):
     with pytest.raises(ParseError):
         await fetch(QUOTES, [http, browser], parser=find_parser(QUOTES))
     assert browser.requests == []
+
+
+async def test_a_site_the_browser_cannot_pass_goes_to_stealth_and_is_remembered(http, browser):
+    http.result, browser.result = BLOCKED, Page(URL, 403, b"<title>Just a moment...</title>", "browser")
+    stealthy = Page(URL, 200, b"<html>stealthy</html>", "stealth")
+    stealth = Fake("stealth", True, stealthy)
+    assert await fetch(URL, [http, browser, stealth]) is stealthy
+    assert await fetch(URL, [http, browser, stealth]) is stealthy
+    assert len(browser.requests) == 1 and len(stealth.requests) == 2  # the second time starts at stealth
+    assert learned("shop.example", "start") == "stealth"

@@ -127,9 +127,18 @@ async def test_a_key_s_cookies_never_ride_along_on_another_key_s_shared_or_batch
     assert http.cookies == [None, None]  # bob's scrape was shared with alice, never the other way round
 
 
-def test_plain_http_with_the_safari_fingerprint_comes_before_the_browser():
+def test_plain_http_with_the_safari_fingerprint_comes_before_the_browser_and_stealth_after_it():
     from scraper.fetchers import build_tiers
 
+    tiers = build_tiers(EgressGuard())
+    assert [tier.name for tier in tiers] == ["http", "http-safari", "browser", "stealth"]
+    assert tiers[-1].warm is False  # a second Chromium only once a site needs it
+
+
+def test_stealth_is_left_out_when_patchright_is_missing(monkeypatch):
+    from scraper.fetchers import build_tiers
+
+    monkeypatch.setattr("scraper.fetchers.find_spec", lambda name: None if name == "patchright" else object())
     assert [tier.name for tier in build_tiers(EgressGuard())] == ["http", "http-safari", "browser"]
 
 

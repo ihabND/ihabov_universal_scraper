@@ -20,6 +20,7 @@ class Settings:
     browser_enabled: bool
     browser_warm: bool
     browser_engine: str  # "playwright" or "patchright" (same API)
+    stealth_browser: bool  # a Patchright tier after the browser; needs browser_enabled
     browser_workers: int
     batch_workers: int  # per API key
     strategy_db: str  # the SQLite file with every site's strategy
@@ -51,6 +52,7 @@ def load() -> Settings:
         browser_enabled=env_on("BROWSER_FALLBACK"),
         browser_warm=env_on("BROWSER_WARM"),
         browser_engine=os.environ.get("BROWSER_ENGINE", "playwright"),
+        stealth_browser=env_on("STEALTH_BROWSER"),
         browser_workers=int(os.environ.get("BROWSER_WORKERS", "2")),
         batch_workers=int(os.environ.get("BATCH_WORKERS", "8")),
         strategy_db=os.environ.get("STRATEGY_DB", "data/strategies.db"),
