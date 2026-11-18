@@ -30,18 +30,19 @@ logger = logging.getLogger(__name__)
 
 
 class HttpFetcher:
-    name = "http"
     renders = False
     status = "ready"
 
-    def __init__(self, guard: EgressGuard):
-        self.guard = guard
+    def __init__(
+        self, guard: EgressGuard, *, name: str = "http", impersonate: str = "chrome", retries: int = MAX_RETRIES
+    ):
+        self.guard, self.name, self.impersonate, self.retries = guard, name, impersonate, retries
         self.session: AsyncSession | None = None
 
     async def start(self) -> None:
         # discard_cookies: one session serves every caller, so cookies are passed per fetch instead.
         self.session = AsyncSession(
-            impersonate="chrome",
+            impersonate=self.impersonate,
             discard_cookies=True,
             curl_options={
                 CurlOpt.CONNECTTIMEOUT_MS: REQUEST_TIMEOUT * 1000,
@@ -80,11 +81,11 @@ class HttpFetcher:
                 continue
             if 200 <= response.status_code < 300:
                 check_content_type(response.headers.get("content-type", ""))
-            return Page(url, response.status_code, response.content)
+            return Page(url, response.status_code, response.content, self.name)
         raise FetchError("Too many redirects")
 
     async def get(self, url: str, cookies: Cookies, headers: dict | None, deadline: float) -> Response:
-        for attempt in range(MAX_RETRIES + 1):
+        for attempt in range(self.retries + 1):
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise FetchError("The site took too long to respond.")
@@ -108,7 +109,7 @@ class HttpFetcher:
             ):
                 return response
             wait = BACKOFF_SECONDS * 2**attempt
-            if attempt == MAX_RETRIES or time.monotonic() + wait + 1 > deadline:
+            if attempt == self.retries or time.monotonic() + wait + 1 > deadline:
                 if response is not None:
                     return response
                 raise FetchError(f"Could not fetch the page: {error}") from error

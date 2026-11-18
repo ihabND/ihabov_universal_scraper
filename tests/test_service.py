@@ -120,3 +120,9 @@ async def test_a_key_s_cookies_never_ride_along_on_another_key_s_shared_or_batch
     await asyncio.gather(scraper.scrape(QUOTES, owner="bob"), scraper.scrape(QUOTES, owner="alice"))
     await scraper.batch(["https://quotes.toscrape.com/page/3/"], "html", "auto", owner="bob")
     assert http.cookies == [None, None]  # bob's scrape was shared with alice, never the other way round
+
+
+def test_plain_http_with_the_safari_fingerprint_comes_before_the_browser():
+    from scraper.fetchers import build_tiers
+
+    assert [tier.name for tier in build_tiers(EgressGuard())] == ["http", "http-safari", "browser"]

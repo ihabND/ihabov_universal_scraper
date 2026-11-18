@@ -56,6 +56,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.reply(status=302, headers=[("location", self.path), ("set-cookie", "c=1")])  # no Path
         if self.path == "/sets-cookie-then-loops":
             return self.reply(b"<html>welcome back</html>")
+        if self.path == "/user-agent":
+            return self.reply(self.headers.get("user-agent", "").encode())
+        if self.path == "/always-503":
+            hits["always-503"] = hits.get("always-503", 0) + 1
+            return self.reply(b"<html>down</html>", 503)
         if self.path == "/challenge-503":
             hits["challenge"] += 1
             return self.reply(CHALLENGE, 503)
@@ -135,6 +140,24 @@ async def test_a_block_with_a_non_html_body_is_returned_as_a_page(fetcher, site)
 async def test_cookies_stay_within_one_fetch(fetcher, site):
     assert b"cookie=s=1" in (await fetch(fetcher, site + "/set-cookie")).content
     assert b"cookie=None" in (await fetch(fetcher, site + "/echo")).content
+
+
+async def test_a_second_plain_tier_has_its_own_fingerprint_and_name(fetcher, site):
+    safari = HttpFetcher(fetcher.guard, name="http-safari", impersonate="safari", retries=0)
+    try:
+        page = await fetch(safari, site + "/user-agent")
+    finally:
+        await safari.stop()
+    assert page.fetched_with == "http-safari" and b"Safari" in page.content and b"Chrome" not in page.content
+
+
+async def test_a_fetcher_without_retries_asks_once(fetcher, site):
+    once = HttpFetcher(fetcher.guard, retries=0)
+    try:
+        assert (await fetch(once, site + "/always-503")).status_code == 503
+    finally:
+        await once.stop()
+    assert hits["always-503"] == 1
 
 
 async def test_a_cookie_set_without_a_path_is_sent_on_the_next_hop(fetcher, site):

@@ -64,6 +64,15 @@ async def test_a_blocked_site_goes_to_the_browser_and_is_remembered(http, browse
     assert (await get_profile("shop.example")).tier == "browser"
 
 
+async def test_a_site_that_blocks_one_fingerprint_is_remembered_on_the_other(http, browser):
+    http.result = BLOCKED
+    safari = Fake("http-safari", False, OPEN)
+    assert await fetch(URL, [http, safari, browser]) is OPEN
+    assert await fetch(URL, [http, safari, browser]) is OPEN
+    assert len(http.requests) == 1 and len(safari.requests) == 2 and browser.requests == []
+    assert (await get_profile("shop.example")).tier == "http-safari"
+
+
 async def test_without_the_browser_a_blocked_page_is_returned(http):
     http.result = BLOCKED
     assert await fetch(URL, [http]) is BLOCKED
