@@ -11,6 +11,8 @@ from bs4 import BeautifulSoup
 from ..core.errors import ParseError
 from . import jsonld
 
+# Data in a JSON script tag with a known id.
+JSON_SCRIPTS = {"__NEXT_DATA__": "next_data", "___INITIAL_STATE___": "initial_state"}
 # Data assigned to a variable in an inline script, like `var ytInitialData = {...};`.
 ASSIGNED = {
     "ytInitialData": "yt_initial_data",
@@ -31,12 +33,13 @@ def embedded_data(soup: BeautifulSoup, url: str) -> dict:
             continue
     if items:
         data["json_ld"] = items
-    next_data = soup.find("script", id="__NEXT_DATA__")
-    if next_data and next_data.string:
-        try:
-            data["next_data"] = json.loads(next_data.string)
-        except ValueError:
-            pass
+    for script_id, key in JSON_SCRIPTS.items():
+        tag = soup.find("script", id=script_id)
+        if tag and tag.string:
+            try:
+                data[key] = json.loads(tag.string)
+            except ValueError:
+                pass
     for tag in soup.find_all("script"):
         text = tag.string or ""
         for variable, key in ASSIGNED.items():

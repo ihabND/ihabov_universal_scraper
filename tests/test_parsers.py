@@ -108,3 +108,10 @@ def test_any_other_page_gives_its_json_ld():
 def test_a_page_without_structured_data_is_a_parse_error():
     with pytest.raises(ParseError):
         parse_page(GENERIC, Page("https://example.com/", 200, b"<html><title>Example</title><p>Hi</p></html>"))
+
+
+def test_state_kept_in_a_json_script_tag_is_read():
+    page = b'<title>T</title><script type="application/json" id="___INITIAL_STATE___">{"tag": "photography"}</script>'
+    assert parse_page(GENERIC, Page("https://www.tumblr.com/tagged/photography", 200, page))["initial_state"] == {
+        "tag": "photography"
+    }

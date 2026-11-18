@@ -16,7 +16,8 @@ AWS_WAF = b"<html><script src='https://x.awswaf.com/challenge.js'></script></htm
         (b"<title>Reddit - Prove your humanity</title>", "reddit"),
         (b'<form method="post" action="/checkcaptcha?key=x">', "yandex"),
         (b"<title>Bot or Not?</title>", "expedia"),
-        (b"Please enable Javascript and refresh the page to continue", "quora"),
+        (b'var e=document.forms[0]; e.elements.namedItem("solution").value=n', "reddit-check"),
+        (b'<script src="//g.alicdn.com/bsop-static/sufei-punish/0.1.130/build/punishpage.min.js">', "alibaba"),
         (b"<html><body>hello</body></html>", None),
     ],
 )
@@ -46,3 +47,12 @@ def test_a_bot_check_page_is_not_ok():
 def test_ok_means_a_2xx_page_that_is_not_blocked():
     assert Page("https://a.example/", 200, b"<html>x</html>").ok
     assert not Page("https://a.example/", 404, b"<html>gone</html>").ok
+
+
+def test_a_real_page_that_asks_for_javascript_in_noscript_is_not_a_bot_check():
+    assert (
+        challenge_of(
+            b"<div>answers</div><noscript>Please enable Javascript and refresh the page to continue</noscript>"
+        )
+        is None
+    )

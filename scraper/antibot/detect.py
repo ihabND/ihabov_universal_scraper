@@ -9,12 +9,13 @@ CHALLENGES = {
     "cloudflare": (b"_cf_chl_opt", b"<title>Just a moment...</title>"),
     "datadome": (b"captcha-delivery.com",),
     "reddit": (b"<title>Reddit - Prove your humanity</title>",),
+    "reddit-check": (b'namedItem("solution")',),  # a JavaScript check a browser passes
     "yandex": (b"/checkcaptcha",),
     "expedia": (b"<title>Bot or Not?</title>",),  # Expedia, Hotels.com and the rest of Expedia Group
-    "quora": (b"Please enable Javascript and refresh the page to continue",),
+    "alibaba": (b"sufei-punish",),
 }
 # Checks a headless browser never passes by waiting (a person or a solver has to): the browser stops at once.
-CAPTCHAS = {"datadome", "reddit", "yandex", "expedia"}
+CAPTCHAS = {"datadome", "reddit", "yandex", "expedia", "alibaba"}
 
 
 def challenge_of(content: bytes) -> str | None:
