@@ -195,7 +195,13 @@ def test_key(monkeypatch):
 def test_the_test_key_works_on_the_example_sites_only(client, fetched, test_key):
     ok = client.get("/scrape", params={"url": "https://books.toscrape.com/"}, headers=test_key)
     assert ok.status_code == 200
-    for url in ("https://shop.example/", "https://evil-toscrape.com/"):
+    # Chromium reads a backslash as "/", so the host of the third is evil.example, not the example site.
+    for url in (
+        "https://shop.example/",
+        "https://evil-toscrape.com/",
+        "https://evil.example\\@books.toscrape.com/",
+        "https://[::1",
+    ):
         refused = client.get("/scrape", params={"url": url}, headers=test_key)
         assert refused.status_code == 403
         assert refused.json()["detail"].startswith("The test key works on the example sites")

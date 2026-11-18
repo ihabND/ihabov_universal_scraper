@@ -43,8 +43,14 @@ async def scrape(
 
 
 def check_test_site(url: str) -> None:
-    host = urlsplit(url.strip()).hostname or ""
-    if not host_in(host, settings.test_key_sites):
+    """Refused unless the host is an example site. A backslash or a user@ part is refused too: Chromium reads
+    "https://evil.example\\@books.toscrape.com/" as evil.example, where Python sees books.toscrape.com."""
+    try:
+        parts = urlsplit(url.strip())
+        host, userinfo = parts.hostname or "", parts.username is not None
+    except ValueError:  # not a URL any fetcher could use
+        host, userinfo = "", False
+    if "\\" in url or userinfo or not host_in(host, settings.test_key_sites):
         sites = ", ".join(settings.test_key_sites)
         raise HTTPException(403, f"The test key works on the example sites only: {sites}.")
 
