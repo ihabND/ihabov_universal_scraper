@@ -14,12 +14,20 @@ import pytest  # noqa: E402
 from limits.aio.storage import MemoryStorage  # noqa: E402
 from limits.aio.strategies import FixedWindowRateLimiter  # noqa: E402
 
-from scraper.store import cache, quota  # noqa: E402
+from scraper.settings import settings  # noqa: E402
+from scraper.store import cache, quota, strategies  # noqa: E402
 
 
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def fresh_strategies(tmp_path, monkeypatch):
+    monkeypatch.setattr(settings, "strategy_db", str(tmp_path / "strategies.db"))
+    yield
+    strategies.close()
 
 
 @pytest.fixture(autouse=True)

@@ -15,3 +15,4 @@ fly.toml
 *.md
 *.txt
 !requirements.txt
+data/

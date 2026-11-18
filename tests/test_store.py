@@ -4,7 +4,7 @@ import pytest
 from limits import parse_many
 
 from scraper.core.page import Page
-from scraper.store import cache, quota
+from scraper.store import cache, quota, strategies
 from scraper.store.profiles import PROFILE_SECONDS, SiteProfile, get_profile, save_profile
 
 pytestmark = pytest.mark.anyio
@@ -86,3 +86,15 @@ async def test_a_rate_limit_store_failure_pauses_redis_and_later_requests_skip_i
     assert await quota.take(quota.KEY_LIMITS, "key", "k") is None  # fails open by default
     assert await quota.take(quota.KEY_LIMITS, "key", "k") is None
     assert limiter.calls == 1 and not cache.available()
+
+
+def test_pins_beat_learned_values_which_beat_defaults_and_everything_survives_reopening():
+    strategies.learn("shop.example", "start", "browser", "plain HTTP got 403 (cloudflare)")
+    strategies.set_pins("shop.example", {"start": "http", "render_wait": 8})
+    strategies.learn("shop.example", "start", "browser", "plain HTTP got 403 again")  # disagrees with the pin
+    strategies.close()
+    record = strategies.get("shop.example")
+    assert record.site == "shop.example" and record.learned["start"]["value"] == "browser"
+    assert record.flags["start"]["seen"] == "plain HTTP got 403 again"
+    strategy = strategies.strategy_for("shop.example", seed_start="http")
+    assert (strategy.start, strategy.render_wait, strategy.retries) == ("http", 8, 2)

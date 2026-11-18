@@ -15,3 +15,6 @@ venv/
 *.egg-info/
 build/
 dist/
+
+# Site strategies (SQLite)
+data/

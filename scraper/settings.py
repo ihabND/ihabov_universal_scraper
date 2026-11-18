@@ -22,6 +22,8 @@ class Settings:
     browser_engine: str  # "playwright" or "patchright" (same API)
     browser_workers: int
     batch_workers: int  # per API key
+    strategy_db: str  # the SQLite file with every site's strategy
+    admin_keys: list[str]  # keys that may edit strategies
 
 
 def env_list(name: str) -> list[str]:
@@ -51,6 +53,8 @@ def load() -> Settings:
         browser_engine=os.environ.get("BROWSER_ENGINE", "playwright"),
         browser_workers=int(os.environ.get("BROWSER_WORKERS", "2")),
         batch_workers=int(os.environ.get("BATCH_WORKERS", "8")),
+        strategy_db=os.environ.get("STRATEGY_DB", "data/strategies.db"),
+        admin_keys=env_list("ADMIN_KEYS"),
     )
 
 

@@ -36,6 +36,17 @@ def site_of(url: str) -> str:
     return (urlsplit(url).hostname or "").removeprefix("www.")
 
 
+# Second-level names under a country code, like co.uk or com.au: the domain is one label longer there.
+COUNTRY_SECOND_LEVEL = {"co", "com", "org", "net", "ac", "gov", "edu"}
+
+
+def domain_of(site: str) -> str:
+    """The domain a site is grouped under: books.toscrape.com -> toscrape.com, news.bbc.co.uk -> bbc.co.uk."""
+    labels = site.split(".")
+    keep = 3 if len(labels) > 2 and len(labels[-1]) == 2 and labels[-2] in COUNTRY_SECOND_LEVEL else 2
+    return ".".join(labels[-keep:])
+
+
 def is_public(ip: str) -> bool:
     address = ipaddress.ip_address(ip)
     return address.is_global and not address.is_multicast
