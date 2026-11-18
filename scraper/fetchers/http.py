@@ -72,7 +72,8 @@ class HttpFetcher:
         for _ in range(MAX_REDIRECTS + 1):
             await validate_url(url)
             response = await self.get(url, cookies, headers, deadline)
-            cookies.update(response.cookies)
+            for c in response.cookies.jar:  # curl_cffi leaves the path empty when Set-Cookie has none
+                cookies.set(c.name, c.value, c.domain, c.path or "/", secure=c.secure)
             location = response.headers.get("location")
             if response.status_code in REDIRECT_CODES and location:
                 url = urljoin(url, location)

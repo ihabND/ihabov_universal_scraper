@@ -52,6 +52,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         }
         if self.path == "/flaky":  # 503 twice, then the page
             return self.reply(status=503) if next(flaky) < 2 else self.reply(b"<html>finally</html>")
+        if self.path == "/sets-cookie-then-loops" and "c=1" not in (self.headers.get("cookie") or ""):
+            return self.reply(status=302, headers=[("location", self.path), ("set-cookie", "c=1")])  # no Path
+        if self.path == "/sets-cookie-then-loops":
+            return self.reply(b"<html>welcome back</html>")
         if self.path == "/challenge-503":
             hits["challenge"] += 1
             return self.reply(CHALLENGE, 503)
@@ -131,6 +135,11 @@ async def test_a_block_with_a_non_html_body_is_returned_as_a_page(fetcher, site)
 async def test_cookies_stay_within_one_fetch(fetcher, site):
     assert b"cookie=s=1" in (await fetch(fetcher, site + "/set-cookie")).content
     assert b"cookie=None" in (await fetch(fetcher, site + "/echo")).content
+
+
+async def test_a_cookie_set_without_a_path_is_sent_on_the_next_hop(fetcher, site):
+    # Like Goodreads: set a cookie, then redirect to the same page until the cookie comes back.
+    assert (await fetch(fetcher, site + "/sets-cookie-then-loops")).content == b"<html>welcome back</html>"
 
 
 async def test_saved_bot_check_cookies_are_sent_until_plain_http_failed_with_them(fetcher, site):
