@@ -61,12 +61,14 @@ class BrowserFetcher:
             self.warming.add_done_callback(lambda task: task.cancelled() or task.exception())  # logged in get_browser
 
     async def stop(self) -> None:
-        with suppress(self.api.Error):
+        async with self.lock:  # a browser that is still starting is closed once it has started
             if self.browser is not None:
-                await self.browser.close()
+                with suppress(self.api.Error):
+                    await self.browser.close()
             if self.driver is not None:
-                await self.driver.stop()
-        self.driver = self.browser = None
+                with suppress(self.api.Error):
+                    await self.driver.stop()
+            self.driver = self.browser = None
 
     async def get_browser(self):
         async with self.lock:
