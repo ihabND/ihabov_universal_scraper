@@ -43,3 +43,7 @@ class BlockedError(ScrapeError):
 
 class BrowserBusyError(ScrapeError):
     status_code = 503
+
+
+class StoreError(ScrapeError):  # an admin's edit the strategy store couldn't save
+    status_code = 503

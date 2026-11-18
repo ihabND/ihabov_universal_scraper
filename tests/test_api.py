@@ -148,7 +148,7 @@ def test_the_front_page_lists_sites_in_registration_order():
     assert SITE_CARDS[2]["label"] == "Book listing or book page" and SITE_CARDS[-1]["host"] == "imdb.com"
 
 
-def test_strategies_need_an_api_key_to_read_and_the_admin_key_to_edit(client):
+def test_strategies_need_an_api_key_to_read_and_the_admin_key_to_edit(client, tmp_path, monkeypatch):
     strategies.record_use("shop.example", "http", 200, 0.5, True)
     assert client.get("/api/sites").status_code == 401
     assert client.get("/api/sites", headers=KEY).json()[0]["sites"][0]["site"] == "shop.example"
@@ -158,3 +158,6 @@ def test_strategies_need_an_api_key_to_read_and_the_admin_key_to_edit(client):
     assert client.put("/api/sites/shop.example/pins", json=pins, headers=ADMIN).status_code == 200
     assert strategies.strategy_for("shop.example", "http").start == "browser"
     assert client.get("/sites").status_code == 200
+    strategies.close()
+    monkeypatch.setattr(settings, "strategy_db", str(tmp_path))  # a folder, so the store can't be opened
+    assert client.put("/api/sites/shop.example/pins", json=pins, headers=ADMIN).status_code == 503

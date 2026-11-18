@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from ..core.errors import StoreError
 from ..core.strategy import Strategy, effective
 from ..net.urls import domain_of
 from ..settings import settings
@@ -49,17 +50,21 @@ class SiteRecord:
     pinned_at: dict[str, str]  # setting -> when it was pinned
 
 
-def execute(sql: str, args: tuple = ()) -> list[tuple]:
+def execute(sql: str, args: tuple = (), *, strict: bool = False) -> list[tuple]:
+    """A failure is logged and reads as no rows; with `strict` (an admin's edit) it raises StoreError instead."""
     global db
     try:
         if db is None:
             Path(settings.strategy_db).parent.mkdir(parents=True, exist_ok=True)
-            # Autocommit; the server, its worker threads and the test client may all touch it.
-            db = sqlite3.connect(settings.strategy_db, isolation_level=None, check_same_thread=False)
+            # Autocommit; the server, its worker threads and the test client may all touch it. A file locked by
+            # another program fails at once: the calls run on the event loop, so waiting would stall every request.
+            db = sqlite3.connect(settings.strategy_db, isolation_level=None, check_same_thread=False, timeout=0.1)
             db.execute("PRAGMA journal_mode=WAL")
             db.execute(SCHEMA)
         return db.execute(sql, args).fetchall()
     except (sqlite3.Error, OSError) as e:
+        if strict:
+            raise StoreError(f"The strategy store could not be written: {e}") from e
         logger.warning("Strategy store failed: %s", e)
         return []
 
@@ -105,8 +110,12 @@ def strategy_for(site: str, seed_start: str) -> Strategy:
     return effective(found.pinned if found else {}, found.learned if found else {}, seed_start)
 
 
-def ensure(site: str) -> SiteRecord:
-    execute("INSERT INTO sites (site, domain) VALUES (?, ?) ON CONFLICT(site) DO NOTHING", (site, domain_of(site)))
+def ensure(site: str, strict: bool = False) -> SiteRecord:
+    execute(
+        "INSERT INTO sites (site, domain) VALUES (?, ?) ON CONFLICT(site) DO NOTHING",
+        (site, domain_of(site)),
+        strict=strict,
+    )
     return get(site) or SiteRecord(site, domain_of(site), {}, {}, {}, 0.0, {}, 0, 0, {})
 
 
@@ -143,18 +152,19 @@ def claim_check(site: str, every: float = CHECK_SECONDS) -> bool:
 
 def set_pins(site: str, pins: dict) -> None:
     """Replaces the site's pins. A flag about a pin that changed goes with it."""
-    found = ensure(site)
+    found = ensure(site, strict=True)
     unchanged = {name for name, value in pins.items() if found.pinned.get(name, object()) == value}
     pinned_at = {name: found.pinned_at.get(name) if name in unchanged else now_text() for name in pins}
     flags = {name: flag for name, flag in found.flags.items() if name in unchanged}
     execute(
         "UPDATE sites SET pinned = ?, pinned_at = ?, flags = ? WHERE site = ?",
         (json.dumps(pins), json.dumps(pinned_at), json.dumps(flags), site),
+        strict=True,
     )
 
 
 def clear_flags(site: str) -> None:
-    execute("UPDATE sites SET flags = '{}' WHERE site = ?", (site,))
+    execute("UPDATE sites SET flags = '{}' WHERE site = ?", (site,), strict=True)
 
 
 def export_pins() -> dict[str, dict]:
@@ -162,6 +172,13 @@ def export_pins() -> dict[str, dict]:
 
 
 def import_pins(data: dict[str, dict]) -> int:
-    for site, pins in data.items():
-        set_pins(site, pins)
+    """Sets the pins of every site in `data`, or of none when the store fails partway."""
+    execute("BEGIN", strict=True)
+    try:
+        for site, pins in data.items():
+            set_pins(site, pins)
+        execute("COMMIT", strict=True)
+    except BaseException:
+        execute("ROLLBACK")
+        raise
     return len(data)
