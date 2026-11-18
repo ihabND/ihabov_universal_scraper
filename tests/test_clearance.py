@@ -50,3 +50,9 @@ async def test_a_solver_runs_only_for_its_vendor(monkeypatch):
     await solvers.run_solvers(tab=None, vendor="aws-waf")
     await solvers.run_solvers(tab=None, vendor="cloudflare")
     assert calls == ["cloudflare"]
+
+
+async def test_akamai_bot_manager_cookies_are_not_kept():
+    # Replayed over plain HTTP they got flagged, and took the browser down with them (eBay, Expedia, Hotels.com).
+    await save_clearance("alice", "shop.example", Clearance([COOKIE, {"name": "_abck", "value": "x"}], {}))
+    assert await get_clearance("alice", "shop.example") is None

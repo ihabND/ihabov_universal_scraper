@@ -10,6 +10,9 @@ CLEARANCE_SECONDS = 4 * 3600
 PLAIN_RETRY_SECONDS = 3600  # after plain HTTP was blocked even with the cookies, skip it this long
 # The browser headers bot-check cookies are usually bound to; sent along with the cookies.
 CLEARANCE_HEADERS = ("user-agent", "accept-language", "sec-ch-ua", "sec-ch-ua-mobile", "sec-ch-ua-platform")
+# Akamai Bot Manager's cookies are bound to the browser that earned them: replayed over plain HTTP they get
+# flagged, and a browser that then starts with them is blocked too.
+UNREPLAYABLE_COOKIES = {"_abck", "bm_sz", "ak_bmsc", "bm_sv"}
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +53,8 @@ async def store(owner: str, site: str, clearance: Clearance) -> None:
 
 
 async def save_clearance(owner: str, site: str, earned: Clearance) -> None:
+    if any(c["name"] in UNREPLAYABLE_COOKIES for c in earned.cookies):
+        return
     old = await get_clearance(owner, site)
     earned.expires = time.time() + CLEARANCE_SECONDS
     earned.plain_blocked_at = old.plain_blocked_at if old else 0.0
