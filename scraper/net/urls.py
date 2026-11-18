@@ -4,12 +4,16 @@ import asyncio
 import ipaddress
 import logging
 import socket
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from ..core.errors import BlockedURLError, HostNotFoundError, InvalidURLError
 
 ALLOWED_SCHEMES = {"http", "https"}
 PATH_SAFE_CHARS = "/%:@!$&'()*+,;=~"
+# Lookups get their own threads, so they never wait behind parsing in the default pool (5 threads on 1 CPU).
+DNS_POOL = ThreadPoolExecutor(max_workers=16, thread_name_prefix="dns")
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +44,8 @@ def is_public(ip: str) -> bool:
 async def resolve_public(host: str) -> list[str]:
     """The host's addresses, when every one of them is public."""
     try:
-        infos = await asyncio.get_running_loop().getaddrinfo(host, None, type=socket.SOCK_STREAM)
+        lookup = partial(socket.getaddrinfo, host, None, type=socket.SOCK_STREAM)
+        infos = await asyncio.get_running_loop().run_in_executor(DNS_POOL, lookup)
     except socket.gaierror:
         raise HostNotFoundError(f"Could not resolve {host}.") from None
     ips = [info[4][0] for info in infos]
