@@ -13,6 +13,10 @@ AWS_WAF = b"<html><script src='https://x.awswaf.com/challenge.js'></script></htm
         (b"<script>window._cf_chl_opt = {}</script>", "cloudflare"),
         (b"<title>Just a moment...</title>", "cloudflare"),
         (b"<script src='https://geo.captcha-delivery.com/c.js'></script>", "datadome"),
+        (b"<title>Reddit - Prove your humanity</title>", "reddit"),
+        (b'<form method="post" action="/checkcaptcha?key=x">', "yandex"),
+        (b"<title>Bot or Not?</title>", "expedia"),
+        (b"Please enable Javascript and refresh the page to continue", "quora"),
         (b"<html><body>hello</body></html>", None),
     ],
 )
@@ -21,11 +25,16 @@ def test_challenge_vendor(content, vendor):
 
 
 def test_a_large_page_is_never_a_challenge():
-    assert challenge_of(AWS_WAF + b"x" * 200_000) is None
+    assert challenge_of(AWS_WAF + b"x" * 300_000) is None
+
+
+def test_reddit_s_check_page_is_recognised_at_its_real_size():
+    assert challenge_of(b"<title>Reddit - Prove your humanity</title>" + b"x" * 167_000) == "reddit"
 
 
 def test_blocking_statuses():
     assert looks_blocked(403, b"<html>no</html>") and looks_blocked(429, b"") and looks_blocked(202, b"")
+    assert looks_blocked(406, b"")  # CarGurus answers bots with an empty 406
     assert not looks_blocked(404, b"<html>gone</html>")
 
 

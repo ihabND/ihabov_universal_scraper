@@ -1,12 +1,17 @@
 """Recognising bot protection. A new vendor is one more entry in CHALLENGES."""
 
-BLOCKED_STATUS_CODES = {202, 403, 429, 503}
-CHALLENGE_PAGE_MAX_BYTES = 150 * 1024  # bot-check pages are small; a real page may mention a vendor anywhere
+BLOCKED_STATUS_CODES = {202, 403, 406, 429, 503}
+# Bot-check pages are small (Reddit's, 167 KB, is the largest seen); a real page may mention a vendor anywhere.
+CHALLENGE_PAGE_MAX_BYTES = 256 * 1024
 
 CHALLENGES = {
     "aws-waf": (b"awswaf",),
     "cloudflare": (b"_cf_chl_opt", b"<title>Just a moment...</title>"),
     "datadome": (b"captcha-delivery.com",),
+    "reddit": (b"<title>Reddit - Prove your humanity</title>",),
+    "yandex": (b"/checkcaptcha",),
+    "expedia": (b"<title>Bot or Not?</title>",),  # Expedia, Hotels.com and the rest of Expedia Group
+    "quora": (b"Please enable Javascript and refresh the page to continue",),
 }
 
 
