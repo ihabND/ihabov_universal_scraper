@@ -1,6 +1,6 @@
 """Redis, best effort: if it's missing or down, the scraper keeps working without it.
 
-Pages are cached in Redis only. Small JSON records (site profiles, bot-check cookies) fall back to
+Pages are cached in Redis only. Small JSON records (bot-check cookies) fall back to
 this process's memory while Redis is off or paused.
 """
 

@@ -6,8 +6,9 @@ from scraper.antibot.clearance import Clearance, get_clearance, save_clearance
 from scraper.core import ladder
 from scraper.core.errors import BlockedError, BrowserBusyError, FetchError, ParseError
 from scraper.core.page import Page
-from scraper.parsers import find_parser
-from scraper.store.profiles import SiteProfile, get_profile, save_profile
+from scraper.net.urls import site_of
+from scraper.parsers import find_parser, seed_tier
+from scraper.store import strategies
 
 pytestmark = pytest.mark.anyio
 
@@ -47,8 +48,14 @@ def browser():
 
 
 async def fetch(url, tiers, **options):
-    page, parsed = await ladder.fetch(url, tiers, **options)
+    strategy = strategies.strategy_for(site_of(url), seed_tier(site_of(url)))
+    page, parsed = await ladder.fetch(url, tiers, strategy=strategy, **options)
     return page if parsed is None else parsed
+
+
+def learned(site, setting):
+    found = strategies.get(site)
+    return found.learned[setting]["value"] if found and setting in found.learned else None
 
 
 async def test_an_open_site_never_starts_the_browser(http, browser):
@@ -61,7 +68,7 @@ async def test_a_blocked_site_goes_to_the_browser_and_is_remembered(http, browse
     assert await fetch(URL, [http, browser]) is RENDERED
     assert await fetch(URL, [http, browser]) is RENDERED
     assert len(http.requests) == 1 and len(browser.requests) == 2  # the second time, no plain attempt wasted
-    assert (await get_profile("shop.example")).tier == "browser"
+    assert learned("shop.example", "start") == "browser"
 
 
 async def test_a_site_that_blocks_one_fingerprint_is_remembered_on_the_other(http, browser):
@@ -70,7 +77,7 @@ async def test_a_site_that_blocks_one_fingerprint_is_remembered_on_the_other(htt
     assert await fetch(URL, [http, safari, browser]) is OPEN
     assert await fetch(URL, [http, safari, browser]) is OPEN
     assert len(http.requests) == 1 and len(safari.requests) == 2 and browser.requests == []
-    assert (await get_profile("shop.example")).tier == "http-safari"
+    assert learned("shop.example", "start") == "http-safari"
 
 
 async def test_without_the_browser_a_blocked_page_is_returned(http):
@@ -79,14 +86,14 @@ async def test_without_the_browser_a_blocked_page_is_returned(http):
 
 
 async def test_a_remembered_route_that_fails_still_gets_the_plain_page(http, browser):
-    await save_profile("shop.example", SiteProfile("browser"))
+    strategies.learn("shop.example", "start", "browser", "remembered")
     browser.result = FetchError("browser crashed")
     assert await fetch(URL, [http, browser]) is OPEN
-    assert (await get_profile("shop.example")).tier == "http"
+    assert learned("shop.example", "start") == "http"
 
 
 async def test_when_every_route_fails_the_remembered_route_s_error_stands(http, browser):
-    await save_profile("shop.example", SiteProfile("browser"))
+    strategies.learn("shop.example", "start", "browser", "remembered")
     browser.result, http.result = FetchError("browser crashed"), FetchError("site down")
     with pytest.raises(FetchError, match="browser crashed"):
         await fetch(URL, [http, browser])
@@ -102,7 +109,7 @@ async def test_a_site_down_for_both_is_not_learned_as_blocking(http, browser):
     http.result = Page(URL, 503, b"<html>down for maintenance</html>")
     browser.result = Page(URL, 503, b"<html>down for maintenance</html>", "browser")
     await fetch(URL, [http, browser])
-    assert await get_profile("shop.example") is None
+    assert strategies.get("shop.example") is None
 
 
 async def test_a_seeded_site_goes_to_the_browser_first(http, browser):
@@ -119,10 +126,10 @@ async def test_saved_cookies_are_only_used_by_their_owner(http, browser):
 
 
 async def test_cookies_beat_the_profile(http, browser):
-    await save_profile("shop.example", SiteProfile("browser"))
+    strategies.learn("shop.example", "start", "browser", "remembered")
     await save_clearance("alice", "shop.example", Clearance([COOKIE], {}))
     assert await fetch(URL, [http, browser], owner="alice") is OPEN
-    assert browser.requests == [] and (await get_profile("shop.example")).tier == "browser"
+    assert browser.requests == [] and learned("shop.example", "start") == "browser"
 
 
 async def test_plain_http_blocked_even_with_cookies_is_remembered_for_those_cookies(http, browser):
@@ -167,7 +174,7 @@ RENDERED_TEXT = Page(URL, 200, b"<html><p>" + b"listing " * 100 + b"</p></html>"
 async def test_a_big_page_with_almost_no_text_is_rendered_and_remembered(http, browser):
     http.result, browser.result = BUILT_BY_JS, RENDERED_TEXT
     assert await fetch(URL, [http, browser]) is RENDERED_TEXT
-    assert (await get_profile("shop.example")).render == ["html"]
+    assert learned("shop.example", "render") == ["html"]
     await fetch(URL, [http, browser])
     assert len(http.requests) == 1 and len(browser.requests) == 2
 
@@ -186,7 +193,7 @@ async def test_a_page_the_browser_cannot_fill_either_is_not_remembered(http, bro
     http.result = BUILT_BY_JS
     browser.result = Page(URL, 200, BUILT_BY_JS.content, "browser")
     assert (await fetch(URL, [http, browser])).fetched_with == "browser"
-    assert await get_profile("shop.example") is None
+    assert strategies.get("shop.example") is None
 
 
 # ---- JSON mode -------------------------------------------------------------------------------
@@ -208,36 +215,36 @@ async def test_a_parse_that_needed_the_browser_is_remembered(http, browser):
     http.result, browser.result = EMPTY, RENDERED_QUOTES
     parsed = await fetch(QUOTES, [http, browser], parser=find_parser(QUOTES))
     assert parsed == [{"quote": "Hi", "author": "Ann", "tags": []}]
-    assert (await get_profile("quotes.toscrape.com")).render == ["parse_quotes"]
+    assert learned("quotes.toscrape.com", "render") == ["parse_quotes"]
     await fetch(QUOTES, [http, browser], parser=find_parser(QUOTES))
     assert len(http.requests) == 1 and len(browser.requests) == 2
 
 
 async def test_html_mode_ignores_the_render_memory(http, browser):
-    await save_profile("quotes.toscrape.com", SiteProfile(render=["parse_quotes"]))
+    strategies.learn("quotes.toscrape.com", "render", ["parse_quotes"], "remembered")
     await fetch(QUOTES, [http, browser])
     assert len(http.requests) == 1 and browser.requests == []
 
 
 async def test_without_the_browser_a_page_without_the_data_is_a_parse_error(http):
-    await save_profile("quotes.toscrape.com", SiteProfile(render=["parse_quotes"]))
+    strategies.learn("quotes.toscrape.com", "render", ["parse_quotes"], "remembered")
     http.result = EMPTY
     with pytest.raises(ParseError):
         await fetch(QUOTES, [http], parser=find_parser(QUOTES))
 
 
 async def test_a_busy_browser_falls_back_to_the_plain_page_and_forgets_the_render(http, browser):
-    await save_profile("quotes.toscrape.com", SiteProfile(render=["parse_quotes"]))
+    strategies.learn("quotes.toscrape.com", "render", ["parse_quotes"], "remembered")
     browser.result = BrowserBusyError("busy")
     http.result = Page(QUOTES, 200, QUOTE_HTML)  # the memory was wrong: the plain page has the data now
     assert await fetch(QUOTES, [http, browser], parser=find_parser(QUOTES)) == [
         {"quote": "Hi", "author": "Ann", "tags": []}
     ]
-    assert (await get_profile("quotes.toscrape.com")).render == []
+    assert learned("quotes.toscrape.com", "render") == []
 
 
 async def test_when_neither_has_the_data_the_browser_error_stands(http, browser):
-    await save_profile("quotes.toscrape.com", SiteProfile(render=["parse_quotes"]))
+    strategies.learn("quotes.toscrape.com", "render", ["parse_quotes"], "remembered")
     browser.result, http.result = BrowserBusyError("busy"), EMPTY
     with pytest.raises(BrowserBusyError):
         await fetch(QUOTES, [http, browser], parser=find_parser(QUOTES))

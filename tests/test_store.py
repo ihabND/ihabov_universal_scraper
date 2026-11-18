@@ -5,7 +5,6 @@ from limits import parse_many
 
 from scraper.core.page import Page
 from scraper.store import cache, quota, strategies
-from scraper.store.profiles import PROFILE_SECONDS, SiteProfile, get_profile, save_profile
 
 pytestmark = pytest.mark.anyio
 
@@ -42,16 +41,6 @@ async def test_a_redis_error_pauses_redis(redis):
     redis.connected = False
     assert await cache.get_json("site:shop.example") is None
     assert await cache.redis_status() == "paused"
-
-
-async def test_profiles_are_forgotten_after_a_day(redis):
-    await save_profile("shop.example", SiteProfile("browser", ["parse_book"]))
-    assert await get_profile("shop.example") == SiteProfile("browser", ["parse_book"])
-    assert 0 < await cache.client.ttl(f"{cache.KEY_PREFIX}:site:shop.example") <= PROFILE_SECONDS == 24 * 3600
-
-
-async def test_an_unknown_site_has_no_profile():
-    assert await get_profile("shop.example") is None
 
 
 async def test_wrong_keys_are_limited_per_ip():

@@ -13,8 +13,9 @@ from ..api.schemas import BatchItem, BatchResponse, BrowserOption, Mode, ScrapeR
 from ..fetchers.base import Fetcher
 from ..net.guard import EgressGuard
 from ..net.urls import normalize_url, site_of
-from ..parsers import GENERIC, Parser, find_parser, parse_page
+from ..parsers import GENERIC, Parser, find_parser, parse_page, seed_tier
 from ..settings import settings
+from ..store import strategies
 from ..store.cache import get_page, set_page
 from . import ladder
 from .errors import BrowserDisabledError, InvalidURLError, ParseError, ScrapeError
@@ -99,9 +100,16 @@ class Scraper:
         elif page is not None and not page.complete:
             page = None  # a browser stopped early for JSON mode: content that loads later may be missing
         if page is None:
-            page, parsed = await ladder.fetch(
-                url, tiers, parser=parser, owner=owner, gate=gate, queue_timeout=queue_timeout
-            )
+            site, started = site_of(url), time.monotonic()
+            strategy = strategies.strategy_for(site, seed_tier(site))
+            try:
+                page, parsed = await ladder.fetch(
+                    url, tiers, strategy=strategy, parser=parser, owner=owner, gate=gate, queue_timeout=queue_timeout
+                )
+            except ScrapeError as e:
+                strategies.record_use(site, "-", e.status_code, time.monotonic() - started, False)
+                raise
+            strategies.record_use(site, page.fetched_with, page.status_code, time.monotonic() - started, page.ok)
             await set_page(url, browser, page)
         result = ScrapeResponse(url=url, status_code=page.status_code, ok=page.ok, fetched_with=page.fetched_with)
         if parser:
