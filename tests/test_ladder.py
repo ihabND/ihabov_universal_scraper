@@ -123,6 +123,14 @@ async def test_plain_http_blocked_even_with_cookies_is_remembered_for_those_cook
     assert not (await get_clearance("alice", "shop.example")).plain_ok
 
 
+async def test_after_plain_http_is_blocked_with_saved_cookies_the_browser_starts_without_them(http, browser):
+    await save_clearance("alice", "shop.example", Clearance([COOKIE], {}))
+    http.result = BLOCKED
+    await fetch(URL, [http, browser], owner="alice")
+    await fetch(URL, [http, browser], owner="alice")  # the cookies are marked: plain is skipped, browser starts fresh
+    assert browser.requests == [(None, True), (None, False)]
+
+
 async def test_cookies_from_a_passed_bot_check_are_kept(http, browser):
     http.result = BLOCKED
     browser.result = Page(

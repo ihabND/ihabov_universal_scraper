@@ -41,7 +41,9 @@ async def fetch(
         start = max(start, next((i for i, tier in enumerate(tiers) if tier.renders), start))
     elif clearance and clearance.plain_ok:
         start = 0  # plain HTTP with this key's bot-check cookies beats every other route
-    req = FetchRequest(url, owner, clearance, ready_check(parser, url) if parser else None, queue_timeout=queue_timeout)
+    # Cookies that plain HTTP was already blocked with may be burned, so no fetcher gets them.
+    usable = clearance if clearance and clearance.plain_ok else None
+    req = FetchRequest(url, owner, usable, ready_check(parser, url) if parser else None, queue_timeout=queue_timeout)
     blocked = unparsed = None
     errors = []
     # More capable fetchers first, then the cheaper ones in case the remembered route fails.
@@ -55,8 +57,9 @@ async def fetch(
             errors.append(e)
             continue
         if page.blocked:
-            if not tier.renders and clearance and clearance.plain_ok:
-                await mark_plain_blocked(owner, site, clearance)
+            if not tier.renders and req.clearance:
+                await mark_plain_blocked(owner, site, req.clearance)
+                req.clearance = None
             blocked, req.after_block = page, True
             continue
         parsed = None
