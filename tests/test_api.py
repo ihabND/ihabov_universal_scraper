@@ -7,7 +7,7 @@ from limits import parse_many
 from scraper.app import app
 from scraper.core.page import Page
 from scraper.settings import settings
-from scraper.store import quota, strategies
+from scraper.store import cache, quota, strategies
 
 KEY = {"X-API-Key": "test-key"}
 ADMIN = {"X-Admin-Key": "admin-key"}
@@ -243,3 +243,18 @@ def test_the_test_key_refuses_a_page_that_ended_up_elsewhere(client, test_key, m
     monkeypatch.setattr(client.app.state.scraper, "tiers", [Redirected()])
     response = client.get("/scrape", params={"url": "https://books.toscrape.com/go"}, headers=test_key)
     assert response.status_code == 403 and "elsewhere" not in response.text
+
+
+def test_startup_opens_both_redis_connections_before_the_first_request(monkeypatch):
+    warmed = []
+
+    async def warm_cache():
+        warmed.append("cache")
+
+    async def warm_rate_limits():
+        warmed.append("rate limits")
+
+    monkeypatch.setattr(cache, "warm", warm_cache)
+    monkeypatch.setattr(quota, "warm", warm_rate_limits)
+    with TestClient(app):
+        assert warmed == ["cache", "rate limits"]

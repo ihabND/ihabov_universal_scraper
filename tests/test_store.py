@@ -2,6 +2,7 @@ import time
 
 import pytest
 from limits import parse_many
+from redis.exceptions import TimeoutError as RedisTimeout
 
 from scraper.core.page import Page
 from scraper.store import cache, quota, strategies
@@ -74,7 +75,80 @@ async def test_a_rate_limit_store_failure_pauses_redis_and_later_requests_skip_i
     monkeypatch.setattr(quota, "limiter", limiter)
     assert await quota.take(quota.KEY_LIMITS, "key", "k") is None  # fails open by default
     assert await quota.take(quota.KEY_LIMITS, "key", "k") is None
-    assert limiter.calls == 1 and not cache.available()
+    assert limiter.calls == 2 and not cache.available()  # one retry, then the pause skips the store
+
+
+async def test_one_redis_timeout_is_retried_instead_of_pausing_redis(redis, monkeypatch):
+    # The first command after a cold start can time out while the connection is still being set up.
+    await cache.set_json("site:shop.example", {"start": "http"}, ttl=60)
+    real_get = cache.client.get
+    failures = [RedisTimeout("Timeout reading from upstash")]
+
+    async def cold_get(*args, **kwargs):
+        if failures:
+            raise failures.pop()
+        return await real_get(*args, **kwargs)
+
+    monkeypatch.setattr(cache.client, "get", cold_get)
+    assert await cache.get_json("site:shop.example") == {"start": "http"}
+    assert cache.available()
+
+
+class ColdLimiter:
+    """A rate-limit store whose first call times out, like a connection that is still opening."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def test(self, *args, **kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            raise TimeoutError("Timeout reading from upstash")
+        return True
+
+    async def hit(self, *args, **kwargs):
+        return True
+
+
+async def test_one_rate_limit_store_timeout_is_retried_instead_of_pausing(monkeypatch):
+    monkeypatch.setattr(quota.settings, "redis_url", "redis://localhost:1")
+    monkeypatch.setattr(cache, "client", object())
+    monkeypatch.setattr(cache, "paused_until", 0.0)
+    monkeypatch.setattr(quota, "limiter", ColdLimiter())
+    assert await quota.take(quota.TEST_IP_LIMITS, "test", "1.2.3.4", fail_open=False) is None  # the demo isn't paused
+    assert cache.available()
+
+
+async def test_warming_retries_a_cold_redis_until_it_answers(redis, monkeypatch):
+    real_ping = cache.client.ping
+    failures = [RedisTimeout("cold"), RedisTimeout("cold")]
+    pings = []
+
+    async def cold_ping(*args, **kwargs):
+        pings.append(1)
+        if failures:
+            raise failures.pop()
+        return await real_ping(*args, **kwargs)
+
+    monkeypatch.setattr(cache.client, "ping", cold_ping)
+    await cache.warm()
+    assert len(pings) == 3 and cache.available()
+
+
+async def test_warming_opens_the_rate_limit_stores_connection(monkeypatch):
+    checked = []
+
+    class Storage:
+        async def check(self):
+            checked.append(1)
+            return True
+
+    class Limiter:
+        storage = Storage()
+
+    monkeypatch.setattr(quota, "limiter", Limiter())
+    await quota.warm()
+    assert checked == [1]
 
 
 def test_pins_beat_learned_values_which_beat_defaults_and_everything_survives_reopening():

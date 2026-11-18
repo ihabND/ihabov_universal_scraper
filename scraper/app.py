@@ -13,7 +13,7 @@ from .core.errors import ScrapeError
 from .core.service import Scraper
 from .fetchers import build_tiers
 from .net.guard import EgressGuard
-from .store import cache, strategies
+from .store import cache, quota, strategies
 from .web.views import STATIC_DIR
 from .web.views import router as web_router
 
@@ -29,6 +29,10 @@ SECURITY_HEADERS = {
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    # Open both Redis connections now: after a cold start the first command on a new connection can time out,
+    # and the public test key's limits fail closed, which would pause the demo for the visitor who woke us.
+    await cache.warm()
+    await quota.warm()
     guard = EgressGuard()
     app.state.scraper = Scraper(build_tiers(guard), guard)
     await app.state.scraper.start()

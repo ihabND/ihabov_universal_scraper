@@ -42,11 +42,27 @@ def pause(what: str, error: Exception) -> None:
 
 
 async def call(command: str, *args, **kwargs):
-    try:
-        return await getattr(client, command)(*args, **kwargs)
-    except RedisError as e:
-        pause(command, e)
-        return None
+    # One retry: the first command on a connection that is still opening (after a cold start) can time out.
+    for attempt in (1, 2):
+        try:
+            return await getattr(client, command)(*args, **kwargs)
+        except RedisError as e:
+            if attempt == 2:
+                pause(command, e)
+    return None
+
+
+async def warm(attempts: int = 3) -> None:
+    """Open the connection at startup, so the first request doesn't pay for it (or time out on it)."""
+    if client is None:
+        return
+    for attempt in range(1, attempts + 1):
+        try:
+            await client.ping()
+            return
+        except RedisError as e:
+            if attempt == attempts:
+                pause("warm-up", e)
 
 
 async def close() -> None:

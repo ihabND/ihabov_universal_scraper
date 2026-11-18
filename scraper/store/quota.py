@@ -33,17 +33,28 @@ async def take(
         fail_open = settings.rate_limit_fail_open
     if settings.redis_url and not cache.available():
         return unavailable(fail_open)
+    # One retry: the store's first call on a connection that is still opening (after a cold start) can time out.
+    for attempt in (1, 2):
+        try:
+            # Check every limit before charging any, so a refused request uses up nothing.
+            for item in limits:
+                if not await limiter.test(item, *ids, cost=cost):
+                    return str(item), (await limiter.get_window_stats(item, *ids)).reset_time
+            for item in limits:
+                await limiter.hit(item, *ids, cost=cost)
+            return None
+        except Exception as e:  # the storage is unreachable, whatever the client library raises
+            if attempt == 2:
+                cache.pause("rate limiting", e)
+    return unavailable(fail_open)
+
+
+async def warm() -> None:
+    """Open the rate-limit store's own connection at startup, so the first request doesn't time out on it."""
     try:
-        # Check every limit before charging any, so a refused request uses up nothing.
-        for item in limits:
-            if not await limiter.test(item, *ids, cost=cost):
-                return str(item), (await limiter.get_window_stats(item, *ids)).reset_time
-        for item in limits:
-            await limiter.hit(item, *ids, cost=cost)
-    except Exception as e:  # the storage is unreachable, whatever the client library raises
-        cache.pause("rate limiting", e)
-        return unavailable(fail_open)
-    return None
+        await limiter.storage.check()
+    except Exception:  # an unreachable store is handled per request; startup must not fail over it
+        pass
 
 
 def unavailable(fail_open: bool) -> tuple[str, float] | None:
