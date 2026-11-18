@@ -55,9 +55,12 @@ async def fetch(
     blocked = unparsed = None
     why = ""  # what made the scraper move past a fetcher, kept as the evidence for what it learns
     errors: list[ScrapeError] = []  # a parser's complaint about a page goes in here too
+    busy_at = len(tiers)  # a browser that was only busy says nothing about the site, so no browser above it runs
     # More capable fetchers first, then the cheaper ones in case the remembered route fails.
     for i in [*range(start, len(tiers)), *reversed(range(start))]:
         tier = tiers[i]
+        if tier.renders and i > busy_at:
+            continue
         try:
             async with gate(url, strategy.batch_at_once, strategy.batch_gap) if gate else nullcontext():
                 page = await tier.fetch(req)
@@ -65,6 +68,8 @@ async def fetch(
             logger.info("%s: %s failed: %s", site, tier.name, e)
             errors.append(e)
             why = f"{tier.name} failed: {e}"
+            if tier.renders and isinstance(e, BrowserBusyError):
+                busy_at = min(busy_at, i)
             continue
         if page.blocked:
             if not tier.renders and req.clearance:

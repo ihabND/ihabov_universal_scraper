@@ -265,3 +265,11 @@ async def test_a_site_the_browser_cannot_pass_goes_to_stealth_and_is_remembered(
     assert await fetch(URL, [http, browser, stealth]) is stealthy
     assert len(browser.requests) == 1 and len(stealth.requests) == 2  # the second time starts at stealth
     assert learned("shop.example", "start") == "stealth"
+
+
+async def test_a_busy_browser_does_not_spill_into_stealth(http, browser):
+    http.result, browser.result = BLOCKED, BrowserBusyError("All browsers are busy")
+    stealth = Fake("stealth", True, Page(URL, 200, b"<html>stealthy</html>", "stealth"))
+    with pytest.raises(BrowserBusyError):  # "try again soon", as before there was a stealth tier
+        await fetch(URL, [http, browser, stealth])
+    assert stealth.requests == [] and learned("shop.example", "start") is None
