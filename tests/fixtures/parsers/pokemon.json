@@ -1,0 +1,19 @@
+{
+  "url": "https://scrapeme.live/shop/Bulbasaur/",
+  "parsed": {
+    "name": "Bulbasaur",
+    "price": 63.0,
+    "description": "Bulbasaur can be seen napping in bright sunlight. There is a seed on its back. By soaking up the sun’s rays, the seed grows progressively larger.",
+    "sku": "4391",
+    "categories": [
+      "Pokemon",
+      "Seed"
+    ],
+    "tags": [
+      "bulbasaur",
+      "Overgrow",
+      "Seed"
+    ],
+    "stock": 45
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "url": "https://www.imdb.com/title/tt0111161/",
+  "parsed": {
+    "title": "The Shawshank Redemption",
+    "alternate_title": null,
+    "type": "Movie",
+    "year": 1994,
+    "date_published": "1994-10-14",
+    "content_rating": "R",
+    "genres": [
+      "Drama"
+    ],
+    "rating": 9.3,
+    "rating_count": 3266169,
+    "runtime_minutes": 142,
+    "directors": [
+      "Frank Darabont"
+    ],
+    "writers": [
+      "Stephen King",
+      "Frank Darabont"
+    ],
+    "actors": [
+      "Tim Robbins",
+      "Morgan Freeman",
+      "Bob Gunton"
+    ],
+    "keywords": [
+      "prison",
+      "based on the works of stephen king",
+      "escape from prison",
+      "friendship between men",
+      "wrongful conviction"
+    ],
+    "description": "After a banker is sentenced to life in Shawshank Prison, he forms an unlikely friendship with a seasoned inmate and clings to hope amid cruelty and corruption.",
+    "poster": "https://m.media-amazon.com/images/M/MV5BMDAyY2FhYjctNDc5OS00MDNlLThiMGUtY2UxYWVkNGY2ZjljXkEyXkFqcGc@._V1_.jpg",
+    "trailer": "https://www.imdb.com/video/vi3877612057/",
+    "url": "https://www.imdb.com/title/tt0111161/"
+  }
+}

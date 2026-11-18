@@ -1,40 +1,47 @@
-"""Shared test setup. Tests run offline: no real sites, no Redis server, no browser."""
+"""Tests run offline: no real sites, no Redis server, no browser."""
 
+import asyncio
 import os
 
-# Settings are read when the modules are imported, so they are set before anything from scraper loads.
+# Settings are read once on import, so they're set before anything from scraper loads.
 os.environ["API_KEYS"] = "test-key,other-key"
-os.environ.pop("REDIS_URL", None)  # tests that need Redis bring an in-memory fake
-os.environ.pop("PROXY_URL", None)  # tests never go out through a real proxy
-os.environ["BROWSER_WARM"] = "off"  # tests never start a real browser
+for name in ("REDIS_URL", "PROXY_URL", "PROXY_BYPASS", "FLY_APP_NAME", "TRUSTED_IP_HEADER"):
+    os.environ.pop(name, None)
+os.environ["BROWSER_WARM"] = "off"
 
 import fakeredis  # noqa: E402
 import pytest  # noqa: E402
-from fastapi.testclient import TestClient  # noqa: E402
-from limits.storage import MemoryStorage  # noqa: E402
-from limits.strategies import FixedWindowRateLimiter  # noqa: E402
+from limits.aio.storage import MemoryStorage  # noqa: E402
+from limits.aio.strategies import FixedWindowRateLimiter  # noqa: E402
 
-from scraper import blocking, cache, profiles, quota  # noqa: E402
-from scraper.app import app  # noqa: E402
+from scraper.store import cache, quota  # noqa: E402
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
 
 
 @pytest.fixture(autouse=True)
 def clean_state(monkeypatch):
-    """Every test starts with fresh rate-limit counters, no remembered sites and no saved cookies."""
-    monkeypatch.setattr(quota, "_memory", FixedWindowRateLimiter(MemoryStorage()))
-    blocking.clearances.clear()
-    profiles.clear_memory()
-
-
-@pytest.fixture
-def client():
-    return TestClient(app)
+    cache.memory.clear()
+    monkeypatch.setattr(quota, "limiter", FixedWindowRateLimiter(MemoryStorage()))
 
 
 @pytest.fixture
 def redis(monkeypatch):
-    """An in-memory fake Redis in place of the real one, for tests of what is stored there."""
+    """An in-memory fake Redis in place of the real one."""
     server = fakeredis.FakeServer()
-    monkeypatch.setattr(cache, "redis_client", fakeredis.FakeRedis(server=server))
-    monkeypatch.setattr(cache, "_paused_until", 0.0)
+    monkeypatch.setattr(cache, "client", fakeredis.FakeAsyncRedis(server=server))
+    monkeypatch.setattr(cache, "paused_until", 0.0)
     return server
+
+
+@pytest.fixture
+async def ignore_socket_resets():
+    """Windows' event loop reports a socket Chromium reset as an error in its own cleanup (a CPython bug)."""
+    loop = asyncio.get_running_loop()
+    report = loop.get_exception_handler() or (lambda loop, context: loop.default_exception_handler(context))
+    loop.set_exception_handler(
+        lambda loop, context: isinstance(context.get("exception"), ConnectionResetError) or report(loop, context)
+    )
