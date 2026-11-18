@@ -1,5 +1,5 @@
-/* Front end for both pages: copy buttons on the docs page, and the workbench on the
-   home page, which calls GET /scrape directly and renders the result. */
+/* Front end for every page: copy buttons on the docs page, the Sites page, and the workbench on
+   the home page, which calls GET /scrape directly and renders the result. */
 (function () {
   "use strict";
 
@@ -48,6 +48,188 @@
       if (target) copyText(target.textContent, button);
     })
   );
+
+  // ---- Sites page: every site's strategy, read with the API key and edited with the admin key ----
+  if ($("#strategies")) return sitesPage();
+
+  function sitesPage() {
+    const keyInput = $("#key");
+    const adminInput = $("#admin-key");
+    const list = $("#sites");
+    const status = $("#sites-status");
+    const filter = $("#filter");
+    let groups = [];
+    keyInput.value = store.get("scraper-key") || "";
+    adminInput.value = store.get("scraper-admin-key") || "";
+
+    const say = (text, bad = false) => {
+      status.textContent = text;
+      status.classList.toggle("bad", bad);
+    };
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const show = (value) => {
+      if (Array.isArray(value)) return value.length ? value.join(", ") : "none";
+      if (value && typeof value === "object") {
+        const pairs = Object.entries(value);
+        return pairs.length ? pairs.map(([k, v]) => `${k}: ${v}`).join(", ") : "none";
+      }
+      return String(value);
+    };
+    const source = (row) =>
+      ({ pinned: `pinned ${row.at || ""}`, learned: `learned ${row.at}`, parser: "parser default" })[row.source] ||
+      "default";
+
+    async function call(method, path, body, admin = false) {
+      const headers = admin ? { "X-Admin-Key": adminInput.value.trim() } : { "X-API-Key": keyInput.value.trim() };
+      if (body !== undefined) headers["Content-Type"] = "application/json";
+      const response = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : `Error ${response.status}`);
+      return data;
+    }
+
+    function settingRow(row) {
+      const learned = row.learned;
+      let why = "";
+      if (learned && row.source === "learned") why = learned.evidence;
+      else if (learned && row.source === "pinned" && !same(learned.value, row.value))
+        why = `the scraper found ${show(learned.value)} (${learned.at}): ${learned.evidence}`;
+      const action =
+        row.source === "pinned" ? `<button class="linkbtn" type="button" data-unpin="${esc(row.name)}">unpin</button>`
+        : row.source === "learned" ? `<button class="linkbtn" type="button" data-pin="${esc(row.name)}">pin</button>`
+        : "";
+      return `<tr class="${same(row.value, row.default) ? "" : "changed"}">
+        <td><code>${esc(row.name)}</code></td>
+        <td>${esc(show(row.value))}</td>
+        <td><span class="src ${esc(row.source)}">${esc(source(row))}</span>${why ? `<span class="why">${esc(why)}</span>` : ""}</td>
+        <td>${action}</td></tr>`;
+    }
+
+    function siteCard(site) {
+      const start = site.settings.find((row) => row.name === "start");
+      const changed = site.settings.filter((row) => row.name !== "start" && !same(row.value, row.default)).length;
+      const flags = Object.entries(site.flags);
+      const last = site.last.at
+        ? `${site.last.status} ${site.last.route === "-" ? "failed" : "via " + site.last.route}, ${site.last.seconds} s, ${site.last.at}`
+        : "not scraped yet";
+      return `<details class="strategy" data-site="${esc(site.site)}">
+        <summary>
+          <b>${esc(site.site)}</b>
+          <span class="tag">start: ${esc(start.value)} · ${esc(source(start))}</span>
+          ${changed ? `<span class="tag changed">${changed} changed</span>` : ""}
+          ${flags.length ? `<span class="tag flag">⚑ ${flags.length}</span>` : ""}
+          <span class="meta">last: ${esc(last)} · ${site.requests} requests, ${site.ok} ok</span>
+        </summary>
+        <div class="strategy-body">
+          ${flags.length ? `<ul class="flags">${flags
+            .map(([name, flag]) => `<li>⚑ ${esc(flag.at)}: <b>${esc(name)}</b>: ${esc(flag.seen)}. You pinned ${esc(show(site.pins[name]))}.</li>`)
+            .join("")}</ul>` : ""}
+          <div class="tablewrap"><table>
+            <tr><th>Setting</th><th>Value</th><th>Source</th><th></th></tr>
+            ${site.settings.map(settingRow).join("")}
+          </table></div>
+          <label class="field"><span>Pins as JSON: add a setting to pin it, remove it to unpin</span>
+            <textarea class="input pins" rows="4" spellcheck="false">${esc(JSON.stringify(site.pins, null, 2))}</textarea>
+          </label>
+          <div class="strategy-actions">
+            <button class="tool" type="button" data-save>Save pins</button>
+            ${flags.length ? `<button class="tool" type="button" data-clear>Clear flags</button>` : ""}
+          </div>
+        </div>
+      </details>`;
+    }
+
+    function render() {
+      const needle = filter.value.trim().toLowerCase();
+      const open = new Set($$("details.strategy[open]", list).map((card) => card.dataset.site));
+      const shown = groups
+        .map((group) => ({
+          ...group,
+          sites: group.sites.filter((site) => !needle || site.site.includes(needle) || group.domain.includes(needle)),
+        }))
+        .filter((group) => group.sites.length);
+      list.innerHTML = shown.length
+        ? shown.map((group) => `<section class="domain"><h2>${esc(group.domain)} <span class="count">${group.sites.length}</span></h2>${group.sites.map(siteCard).join("")}</section>`).join("")
+        : groups.length ? `<p class="hint">No site matches the filter.</p>` : "";
+      $$("details.strategy", list).forEach((card) => (card.open = open.has(card.dataset.site)));
+      const total = groups.reduce((n, group) => n + group.sites.length, 0);
+      $("#site-count").textContent = total ? `· ${total}` : "";
+    }
+
+    async function load() {
+      for (const [input, name] of [[keyInput, "scraper-key"], [adminInput, "scraper-admin-key"]]) {
+        const value = input.value.trim();
+        value ? store.set(name, value) : store.remove(name);
+      }
+      say("Loading…");
+      try {
+        groups = await call("GET", "/api/sites");
+        render();
+        say(groups.length ? "Click a site for every setting. Pinned values win over learned ones, which win over the defaults." : "No sites yet: scrape something on the workbench first.");
+      } catch (e) {
+        say(e.message, true);
+      }
+    }
+
+    async function change(method, path, body, done) {
+      try {
+        await call(method, path, body, true);
+        await load();
+        say(done);
+      } catch (e) {
+        say(e.message, true);
+      }
+    }
+
+    list.addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      const card = button && button.closest("details.strategy");
+      if (!card) return;
+      const name = card.dataset.site;
+      const site = groups.flatMap((group) => group.sites).find((s) => s.site === name);
+      const path = `/api/sites/${encodeURIComponent(name)}`;
+      if (button.dataset.clear !== undefined) return change("DELETE", `${path}/flags`, undefined, `Cleared the flags of ${name}.`);
+      let pins = { ...site.pins };
+      if (button.dataset.unpin) delete pins[button.dataset.unpin];
+      else if (button.dataset.pin) pins[button.dataset.pin] = site.settings.find((row) => row.name === button.dataset.pin).value;
+      else if (button.dataset.save !== undefined) {
+        try {
+          pins = JSON.parse($("textarea", card).value.trim() || "{}");
+        } catch (e) {
+          return say("The pins are not valid JSON.", true);
+        }
+      } else return;
+      change("PUT", `${path}/pins`, { pins }, `Saved the pins of ${name}.`);
+    });
+
+    $("#keys").addEventListener("submit", (event) => {
+      event.preventDefault();
+      load();
+    });
+    filter.addEventListener("input", render);
+    $("#export").addEventListener("click", async () => {
+      try {
+        const pins = await call("GET", "/api/sites/export", undefined, true);
+        download(JSON.stringify(pins, null, 2), "site-pins.json", "application/json");
+        say(`Exported the pins of ${Object.keys(pins).length} sites.`);
+      } catch (e) {
+        say(e.message, true);
+      }
+    });
+    $("#import").addEventListener("change", async (event) => {
+      const file = event.target.files[0];
+      event.target.value = "";
+      if (!file) return;
+      let data;
+      try {
+        data = JSON.parse(await file.text());
+      } catch (e) {
+        return say("That file is not valid JSON.", true);
+      }
+      change("POST", "/api/sites/import", data, `Imported the pins of ${Object.keys(data).length} sites.`);
+    });
+    if (keyInput.value) load();
+  }
 
   const form = $("#scrape-form");
   if (!form) return; // everything below is the workbench on the home page

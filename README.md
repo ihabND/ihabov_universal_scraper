@@ -12,7 +12,7 @@ A web-scraping API: send it any public URL and get back clean HTML, or structure
 
 - **Two output modes**: `html` returns the cleaned page; `json` returns structured fields from site parsers (books, products, recipes, movies and more), and on any other page the structured data it carries for its own scripts (JSON-LD, Next.js data, YouTube's `ytInitialData`, initial state).
 - **A ladder of fetchers**: plain HTTP with curl's Chrome fingerprint (`curl_cffi`), the same with its Safari fingerprint, then Playwright Chromium. A request moves up when it meets a bot check (Cloudflare, AWS WAF, DataDome, and the checks of Reddit, Yandex and Expedia Group) or a blocking status, when a page comes back nearly empty because JavaScript builds it, or when JSON mode finds the data only after JavaScript runs. Captchas that no registered solver can pass end the wait at once.
-- **Site memory**: what worked on each site is remembered for a day, so the next request starts there. A remembered route that fails falls back to the others in the same request.
+- **Site strategies**: every site gets a permanent record of what works there and of every setting used to scrape it. The scraper fills it in as it goes; values set by hand are pinned and never changed. A route that fails falls back to the others in the same request. See [Site strategies](#site-strategies).
 - **Per-key bot-check cookies**: cookies from a passed bot check are kept per API key for up to 4 hours, so later pages from that site load over plain HTTP (IMDb title pages in about 1.5 s). One key's cookies are never sent for another key. Cookies that plain HTTP was blocked with aren't reused, and Akamai Bot Manager's aren't kept at all.
 - **Batch endpoint**: up to 50 URLs per call, 8 at a time per key, at most 4 per site at once. Failures are reported per URL.
 - **Caching**: fetched pages are cached in Redis for 10 minutes (30 s for errors), shared by both modes, and identical requests in flight share one fetch.
@@ -40,6 +40,12 @@ webscraper.io test cars · scrapeme.live · books.toscrape.com · quotes.toscrap
 
 Any other page in JSON mode gives its embedded structured data, or a 502 when it has none.
 
+## Site strategies
+
+Every site the scraper visits gets a permanent record in a SQLite file (`STRATEGY_DB`): the fetcher to start with, the pages that need JavaScript, and every other setting a scrape uses there: fingerprints, proxy choice, retries, timeouts, browser waits, skipped resources, locale, headers, URL parameters, batch pacing and cache lifetimes. What the scraper learns is written with the date and what it saw (`http got 403 (cloudflare check)`). A value set by hand is pinned: the scraper never changes it, and when a check disagrees with it the site gets a flag. Once a day, a site that skips plain HTTP gets it tried again in the background, after a request has been served.
+
+`/sites` shows every site grouped by domain, with each setting's value and where it came from. Viewing takes an API key; pinning, unpinning, clearing flags and importing pins take a key from `ADMIN_KEYS`. The same as an API: `GET /api/sites` with `X-API-Key`; with `X-Admin-Key`, `PUT /api/sites/{site}/pins` (`{"pins": {"start": "browser"}}`, replacing all of the site's pins), `DELETE /api/sites/{site}/flags`, `GET /api/sites/export` and `POST /api/sites/import`.
+
 ## Run it
 
 ```bash
@@ -53,7 +59,7 @@ uvicorn scraper.app:app --reload
 | Setting | Meaning | Default |
 |---|---|---|
 | `API_KEYS` | comma-separated keys; without any, every request is refused | none |
-| `REDIS_URL` | page cache, shared quotas, site memory and cookies across restarts | in-memory |
+| `REDIS_URL` | page cache, shared quotas and bot-check cookies across restarts | in-memory |
 | `PROXY_URL` | send traffic out through a proxy (`http://user:password@host:port`) | direct |
 | `PROXY_BYPASS` | sites that skip the proxy | practice sites |
 | `IP_RATE_LIMIT`, `KEY_RATE_LIMITS` | limits for wrong keys and per key | `10/minute`, `300/minute;10000/day` |
@@ -61,9 +67,19 @@ uvicorn scraper.app:app --reload
 | `BROWSER_FALLBACK`, `BROWSER_WARM` | use the browser at all; start it at boot | `on`, `on` |
 | `BROWSER_ENGINE` | `playwright`, or `patchright` (a stealthier fork, installed separately) | `playwright` |
 | `BROWSER_WORKERS`, `BATCH_WORKERS` | pages open at once; batch URLs at once per key | `2`, `8` |
+| `STRATEGY_DB` | the SQLite file holding every site's strategy | `data/strategies.db` |
+| `ADMIN_KEYS` | comma-separated keys that may edit site strategies | none |
 | `TRUSTED_IP_HEADER` | header carrying the client IP from a trusted proxy (`Fly-Client-IP` on Fly) | none |
 
-**Docker / Fly.io**: the `Dockerfile` installs Chromium and runs as a non-root user, and `fly.toml` deploys it with scale-to-zero and a health check. API keys are set with `fly secrets set API_KEYS=...` (see [`docs/api-keys.md`](docs/api-keys.md)).
+**Docker / Fly.io**: the `Dockerfile` installs Chromium and runs as a non-root user, and `fly.toml` deploys it with scale-to-zero and a health check. API keys are set with `fly secrets set API_KEYS=...` (see [`docs/api-keys.md`](docs/api-keys.md)), admin keys with `fly secrets set ADMIN_KEYS=...`. Site strategies live on a volume mounted at `/data`. Create it once before the first deploy with this change, then give the app's user the folder:
+
+```bash
+fly volumes create scraper_data --size 1 --region ams
+fly deploy
+fly ssh console -C "chown scraper /data"
+```
+
+Until the `chown`, scraping works with the default settings and the log says the store can't be written.
 
 **Tests** run offline, with no network, Redis or browser: `pytest`. `pytest -m browser` adds the tests that drive a local Chromium.
 
@@ -79,7 +95,7 @@ scraper/
   fetchers/     plain HTTP and the browser; a new tier is a new class here
   antibot/      bot-check detection, per-key cookies, the captcha-solver plug-in point
   parsers/      one module per site, plus shared JSON-LD readers
-  store/        Redis cache, site memory, quotas
+  store/        Redis cache, quotas, site strategies (SQLite)
   net/          URL checks, proxy choice, the egress guard
 ```
 

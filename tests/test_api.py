@@ -7,9 +7,10 @@ from limits import parse_many
 from scraper.app import app
 from scraper.core.page import Page
 from scraper.settings import settings
-from scraper.store import quota
+from scraper.store import quota, strategies
 
 KEY = {"X-API-Key": "test-key"}
+ADMIN = {"X-Admin-Key": "admin-key"}
 QUOTES = b'<div class="quote"><span class="text">Hi</span><small class="author">Ann</small></div>'
 
 
@@ -145,3 +146,15 @@ def test_the_front_page_lists_sites_in_registration_order():
 
     assert [card["host"] for card in SITE_CARDS][:3] == ["webscraper.io", "scrapeme.live", "books.toscrape.com"]
     assert SITE_CARDS[2]["label"] == "Book listing or book page" and SITE_CARDS[-1]["host"] == "imdb.com"
+
+
+def test_strategies_need_an_api_key_to_read_and_the_admin_key_to_edit(client):
+    strategies.record_use("shop.example", "http", 200, 0.5, True)
+    assert client.get("/api/sites").status_code == 401
+    assert client.get("/api/sites", headers=KEY).json()[0]["sites"][0]["site"] == "shop.example"
+    pins = {"pins": {"start": "browser"}}
+    assert client.put("/api/sites/shop.example/pins", json=pins, headers={"X-Admin-Key": "test-key"}).status_code == 401
+    assert client.put("/api/sites/shop.example/pins", json={"pins": {"speed": 1}}, headers=ADMIN).status_code == 400
+    assert client.put("/api/sites/shop.example/pins", json=pins, headers=ADMIN).status_code == 200
+    assert strategies.strategy_for("shop.example", "http").start == "browser"
+    assert client.get("/sites").status_code == 200

@@ -27,7 +27,8 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS sites (
     checked_at REAL NOT NULL DEFAULT 0,
     last TEXT NOT NULL DEFAULT '{}',
     requests INTEGER NOT NULL DEFAULT 0,
-    ok INTEGER NOT NULL DEFAULT 0
+    ok INTEGER NOT NULL DEFAULT 0,
+    pinned_at TEXT NOT NULL DEFAULT '{}'
 )"""
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ class SiteRecord:
     last: dict  # {"at", "route", "status", "seconds"}
     requests: int
     ok: int
+    pinned_at: dict[str, str]  # setting -> when it was pinned
 
 
 def execute(sql: str, args: tuple = ()) -> list[tuple]:
@@ -74,7 +76,7 @@ def now_text() -> str:
 
 
 def record(row: tuple) -> SiteRecord:
-    site, domain, pinned, learned, flags, checked_at, last, requests, ok = row
+    site, domain, pinned, learned, flags, checked_at, last, requests, ok, pinned_at = row
     return SiteRecord(
         site,
         domain,
@@ -85,6 +87,7 @@ def record(row: tuple) -> SiteRecord:
         json.loads(last),
         requests,
         ok,
+        json.loads(pinned_at),
     )
 
 
@@ -104,7 +107,7 @@ def strategy_for(site: str, seed_start: str) -> Strategy:
 
 def ensure(site: str) -> SiteRecord:
     execute("INSERT INTO sites (site, domain) VALUES (?, ?) ON CONFLICT(site) DO NOTHING", (site, domain_of(site)))
-    return get(site) or SiteRecord(site, domain_of(site), {}, {}, {}, 0.0, {}, 0, 0)
+    return get(site) or SiteRecord(site, domain_of(site), {}, {}, {}, 0.0, {}, 0, 0, {})
 
 
 def learn(site: str, setting: str, value, evidence: str) -> None:
@@ -139,8 +142,15 @@ def claim_check(site: str, every: float = CHECK_SECONDS) -> bool:
 
 
 def set_pins(site: str, pins: dict) -> None:
-    ensure(site)
-    execute("UPDATE sites SET pinned = ? WHERE site = ?", (json.dumps(pins), site))
+    """Replaces the site's pins. A flag about a pin that changed goes with it."""
+    found = ensure(site)
+    unchanged = {name for name, value in pins.items() if found.pinned.get(name, object()) == value}
+    pinned_at = {name: found.pinned_at.get(name) if name in unchanged else now_text() for name in pins}
+    flags = {name: flag for name, flag in found.flags.items() if name in unchanged}
+    execute(
+        "UPDATE sites SET pinned = ?, pinned_at = ?, flags = ? WHERE site = ?",
+        (json.dumps(pins), json.dumps(pinned_at), json.dumps(flags), site),
+    )
 
 
 def clear_flags(site: str) -> None:

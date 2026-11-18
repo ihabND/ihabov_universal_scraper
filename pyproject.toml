@@ -52,4 +52,4 @@ known-first-party = ["scraper"]
 
 [tool.ruff.lint.flake8-bugbear]
 # FastAPI declares parameters with calls in default arguments; that is its intended use.
-extend-immutable-calls = ["fastapi.Form", "fastapi.Security", "fastapi.Depends"]
+extend-immutable-calls = ["fastapi.Body", "fastapi.Form", "fastapi.Security", "fastapi.Depends"]

@@ -51,6 +51,12 @@ async def index(request: Request, url: str = "", mode: str = "html", browser: st
     return templates.TemplateResponse(request, "index.html", context)
 
 
+@router.get("/sites", response_class=HTMLResponse)
+async def sites(request: Request):
+    """The data comes from /api/sites, read with the key kept in this browser."""
+    return templates.TemplateResponse(request, "sites.html")
+
+
 @router.get("/docs", response_class=HTMLResponse)
 async def docs(request: Request):
     return templates.TemplateResponse(request, "docs.html", {"parsers": PARSERS})

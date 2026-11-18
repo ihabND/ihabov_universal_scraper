@@ -8,6 +8,14 @@ primary_region = 'ams'
 
 [build]
 
+[env]
+  STRATEGY_DB = '/data/strategies.db'
+
+# Site strategies; created once with `fly volumes create scraper_data --size 1 --region ams`.
+[mounts]
+  source = 'scraper_data'
+  destination = '/data'
+
 [http_service]
   internal_port = 8080
   force_https = true

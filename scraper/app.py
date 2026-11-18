@@ -8,11 +8,12 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from .api.routes import router as api_router
+from .api.sites import router as sites_router
 from .core.errors import ScrapeError
 from .core.service import Scraper
 from .fetchers import build_tiers
 from .net.guard import EgressGuard
-from .store import cache
+from .store import cache, strategies
 from .web.views import STATIC_DIR
 from .web.views import router as web_router
 
@@ -36,11 +37,13 @@ async def lifespan(app: FastAPI):
     finally:
         await app.state.scraper.stop()
         await cache.close()
+        strategies.close()
 
 
 app = FastAPI(title="Ihabov Universal Scraper", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(api_router)
+app.include_router(sites_router)
 app.include_router(web_router)
 
 

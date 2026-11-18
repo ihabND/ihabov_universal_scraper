@@ -46,7 +46,7 @@
           </tr>
           <tr>
             <td><code>browser</code></td><td>string</td><td>No</td>
-            <td><code>auto</code> (default): fetch the page normally; if the site blocks it (a bot check, or status <code>202</code>, <code>403</code>, <code>406</code>, <code>429</code> or <code>503</code>), try again with a Safari fingerprint, then with a real headless browser. The browser is also used when a page comes back nearly empty because JavaScript builds it, and with <code>mode=json</code> when a page that loaded fine doesn't contain the expected data (an error page like a <code>404</code> is not retried). What worked is remembered per site for a day, so the next request starts there.<br><code>never</code>: don't use the browser.<br><code>always</code>: go straight to the browser, for sites you know need it. Slower: a few seconds per page.</td>
+            <td><code>auto</code> (default): fetch the page normally; if the site blocks it (a bot check, or status <code>202</code>, <code>403</code>, <code>406</code>, <code>429</code> or <code>503</code>), try again with a Safari fingerprint, then with a real headless browser. The browser is also used when a page comes back nearly empty because JavaScript builds it, and with <code>mode=json</code> when a page that loaded fine doesn't contain the expected data (an error page like a <code>404</code> is not retried). What worked is kept per site, so the next request starts there (see <a href="/sites">Sites</a>).<br><code>never</code>: don't use the browser.<br><code>always</code>: go straight to the browser, for sites you know need it. Slower: a few seconds per page.</td>
           </tr>
         </table>
       </div>

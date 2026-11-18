@@ -5,6 +5,7 @@ import os
 
 # Settings are read once on import, so they're set before anything from scraper loads.
 os.environ["API_KEYS"] = "test-key,other-key"
+os.environ["ADMIN_KEYS"] = "admin-key"
 for name in ("REDIS_URL", "PROXY_URL", "PROXY_BYPASS", "FLY_APP_NAME", "TRUSTED_IP_HEADER"):
     os.environ.pop(name, None)
 os.environ["BROWSER_WARM"] = "off"
