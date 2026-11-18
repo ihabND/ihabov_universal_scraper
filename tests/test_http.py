@@ -56,6 +56,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.reply(status=302, headers=[("location", self.path), ("set-cookie", "c=1")])  # no Path
         if self.path == "/sets-cookie-then-loops":
             return self.reply(b"<html>welcome back</html>")
+        if self.path == "/dated-cookie-then-loops" and "s=2" not in (self.headers.get("cookie") or ""):
+            dated = "s=2; path=/; expires=Sun, 18 Nov 2046 13:16:42 -0000"  # the date format curl_cffi drops
+            return self.reply(status=302, headers=[("location", self.path), ("set-cookie", dated)])
+        if self.path == "/dated-cookie-then-loops":
+            return self.reply(b"<html>welcome back</html>")
         if self.path == "/user-agent":
             return self.reply(self.headers.get("user-agent", "").encode())
         if self.path == "/always-503":
@@ -163,6 +168,11 @@ async def test_a_fetcher_without_retries_asks_once(fetcher, site):
 async def test_a_cookie_set_without_a_path_is_sent_on_the_next_hop(fetcher, site):
     # Like Goodreads: set a cookie, then redirect to the same page until the cookie comes back.
     assert (await fetch(fetcher, site + "/sets-cookie-then-loops")).content == b"<html>welcome back</html>"
+
+
+async def test_a_cookie_with_any_expiry_format_is_sent_on_the_next_hop(fetcher, site):
+    # Goodreads dates its session cookies "-0000", which curl_cffi can't parse and silently drops.
+    assert (await fetch(fetcher, site + "/dated-cookie-then-loops")).content == b"<html>welcome back</html>"
 
 
 async def test_saved_bot_check_cookies_are_sent_until_plain_http_failed_with_them(fetcher, site):

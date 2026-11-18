@@ -73,8 +73,7 @@ class HttpFetcher:
         for _ in range(MAX_REDIRECTS + 1):
             await validate_url(url)
             response = await self.get(url, cookies, headers, deadline)
-            for c in response.cookies.jar:  # curl_cffi leaves the path empty when Set-Cookie has none
-                cookies.set(c.name, c.value, c.domain, c.path or "/", secure=c.secure)
+            keep_cookies(cookies, response)
             location = response.headers.get("location")
             if response.status_code in REDIRECT_CODES and location:
                 url = urljoin(url, location)
@@ -117,3 +116,13 @@ class HttpFetcher:
                 "Attempt %d for %s failed (%s), retrying", attempt + 1, url, response.status_code if response else error
             )
             await asyncio.sleep(wait)
+
+
+def keep_cookies(jar: Cookies, response: Response) -> None:
+    """Keep what a response sets for the rest of this fetch. Read here because curl_cffi drops cookies with
+    an expiry date it can't parse (Goodreads' "-0000" dates) and leaves the path empty when there is none."""
+    for header in response.headers.get_list("set-cookie"):
+        pair, *attributes = header.split(";")
+        name, _, value = pair.partition("=")
+        options = {key.strip().lower(): val.strip() for key, _, val in (a.partition("=") for a in attributes)}
+        jar.set(name.strip(), value.strip(), options.get("domain", ""), options.get("path") or "/", "secure" in options)
