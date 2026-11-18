@@ -13,7 +13,7 @@ from collections.abc import Callable
 from contextlib import suppress
 
 from ..antibot.clearance import CLEARANCE_HEADERS, Clearance
-from ..antibot.detect import challenge_of
+from ..antibot.detect import CAPTCHAS, challenge_of
 from ..antibot.solvers import run_solvers
 from ..core.errors import BrowserBusyError, ContentTooLargeError, FetchError
 from ..core.page import Page
@@ -168,7 +168,8 @@ class BrowserFetcher:
                 return content, bool(solved)
             if vendor and vendor not in solved:
                 solved.add(vendor)
-                await run_solvers(tab, vendor)
+                if not await run_solvers(tab, vendor) and vendor in CAPTCHAS:
+                    return content, True  # nothing here can pass it, so waiting would only cost time
             if time.monotonic() >= deadline:
                 return content, bool(solved)
             await tab.wait_for_timeout(1000)

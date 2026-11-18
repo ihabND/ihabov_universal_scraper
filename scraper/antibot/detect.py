@@ -13,6 +13,8 @@ CHALLENGES = {
     "expedia": (b"<title>Bot or Not?</title>",),  # Expedia, Hotels.com and the rest of Expedia Group
     "quora": (b"Please enable Javascript and refresh the page to continue",),
 }
+# Checks a headless browser never passes by waiting (a person or a solver has to): the browser stops at once.
+CAPTCHAS = {"datadome", "reddit", "yandex", "expedia"}
 
 
 def challenge_of(content: bytes) -> str | None:

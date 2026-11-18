@@ -16,7 +16,9 @@ class Solver(Protocol):
 SOLVERS: list[Solver] = []
 
 
-async def run_solvers(tab: Any, vendor: str) -> None:
-    for solver in SOLVERS:
-        if vendor in solver.vendors:
-            await solver.solve(tab, vendor)
+async def run_solvers(tab: Any, vendor: str) -> bool:
+    """Runs every solver for this vendor; says whether there was one."""
+    solvers = [solver for solver in SOLVERS if vendor in solver.vendors]
+    for solver in solvers:
+        await solver.solve(tab, vendor)
+    return bool(solvers)

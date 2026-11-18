@@ -65,6 +65,52 @@ async def test_the_selected_engine_s_errors_are_the_ones_handled(monkeypatch):
     assert content == b"<html>full</html>" and complete is True
 
 
+class StuckTab:
+    """A bot-check page that never changes."""
+
+    url = "https://shop.example/"
+
+    def __init__(self, content: bytes):
+        self.page, self.waits = content, 0
+
+    async def content(self) -> str:
+        return self.page.decode()
+
+    async def wait_for_timeout(self, ms):
+        self.waits += 1
+        await asyncio.sleep(0.05)
+
+
+DATADOME = b"<script src='https://geo.captcha-delivery.com/i/x.js'></script>"
+
+
+async def test_a_captcha_no_solver_can_pass_is_not_waited_out():
+    tab = StuckTab(DATADOME)
+    content, challenged = await BrowserFetcher(EgressGuard(), warm=False).wait_out_challenge(tab)
+    assert challenged and tab.waits == 0
+
+
+async def test_a_check_that_can_clear_by_itself_is_waited_for(monkeypatch):
+    monkeypatch.setattr("scraper.fetchers.browser.CHALLENGE_WAIT_SECONDS", 0.2)
+    tab = StuckTab(b"<title>Just a moment...</title>")
+    await BrowserFetcher(EgressGuard(), warm=False).wait_out_challenge(tab)
+    assert tab.waits >= 2
+
+
+async def test_a_captcha_waits_while_a_registered_solver_works_on_it(monkeypatch):
+    class DataDomeSolver:
+        vendors = {"datadome"}
+
+        async def solve(self, tab, vendor):
+            pass
+
+    monkeypatch.setattr("scraper.antibot.solvers.SOLVERS", [DataDomeSolver()])
+    monkeypatch.setattr("scraper.fetchers.browser.CHALLENGE_WAIT_SECONDS", 0.2)
+    tab = StuckTab(DATADOME)
+    await BrowserFetcher(EgressGuard(), warm=False).wait_out_challenge(tab)
+    assert tab.waits >= 2
+
+
 def test_cookies_are_kept_only_after_a_block_or_a_bot_check():
     page, challenge = b"<html>ok</html>", b"<title>Just a moment...</title>"
     assert keeps_cookies(after_block=True, challenged=False, content=page)
