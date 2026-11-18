@@ -59,7 +59,7 @@
           <tr><td><code>url</code></td><td>string</td><td>The normalized URL that was scraped.</td></tr>
           <tr><td><code>status_code</code></td><td>integer</td><td>The HTTP status the <em>target site</em> returned.</td></tr>
           <tr><td><code>ok</code></td><td>boolean</td><td><code>true</code> if the target site answered with a <code>2xx</code> status and the page isn't a bot check.</td></tr>
-          <tr><td><code>fetched_with</code></td><td>string</td><td><code>http</code> for a normal fetch, <code>http-safari</code> for a plain fetch with a Safari fingerprint, <code>browser</code> when the headless browser was used.</td></tr>
+          <tr><td><code>fetched_with</code></td><td>string</td><td><code>http</code> for a normal fetch, <code>http-safari</code> for a plain fetch with a Safari fingerprint, <code>browser</code> when the headless browser was used, <code>stealth</code> when the Patchright browser was used because the regular one was blocked.</td></tr>
           <tr><td><code>content</code></td><td>string or null</td><td>The formatted HTML with <code>mode=html</code>, otherwise <code>null</code>.</td></tr>
           <tr><td><code>parsed</code></td><td>object, array of objects or null</td><td>The page's data with <code>mode=json</code>, otherwise <code>null</code>. See <a href="#json">JSON mode</a>.</td></tr>
         </table>

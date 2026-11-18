@@ -50,7 +50,7 @@ def scrape(client, url, **params):
 
 def test_health_needs_no_key(client):
     body = client.get("/health").json()
-    assert body["status"] == "ok" and set(body) == {"status", "redis", "browser", "proxy"}
+    assert body["status"] == "ok" and set(body) == {"status", "redis", "browser", "stealth", "proxy"}
 
 
 def test_wrong_keys_are_limited_per_ip(client):

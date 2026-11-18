@@ -15,6 +15,7 @@ async def health(request: Request) -> dict:
         "status": "ok",
         "redis": await redis_status(),
         "browser": request.app.state.scraper.browser_status,
+        "stealth": request.app.state.scraper.tier_status("stealth"),
         "proxy": proxy_status(),
     }
 

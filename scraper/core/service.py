@@ -52,6 +52,9 @@ class Scraper:
     def browser_status(self) -> str:
         return next((tier.status for tier in self.tiers if tier.renders), "off")
 
+    def tier_status(self, name: str) -> str:
+        return next((tier.status for tier in self.tiers if tier.name == name), "off")
+
     def tiers_for(self, browser: BrowserOption) -> list[Fetcher]:
         if browser == "never":
             return [tier for tier in self.tiers if not tier.renders]

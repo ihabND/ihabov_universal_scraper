@@ -11,7 +11,7 @@ A web-scraping API: send it any public URL and get back clean HTML, or structure
 ## Features
 
 - **Two output modes**: `html` returns the cleaned page; `json` returns structured fields from site parsers (books, products, recipes, movies and more), and on any other page the structured data it carries for its own scripts (JSON-LD, Next.js data, YouTube's `ytInitialData`, initial state).
-- **A ladder of fetchers**: plain HTTP with curl's Chrome fingerprint (`curl_cffi`), the same with its Safari fingerprint, then Playwright Chromium. A request moves up when it meets a bot check (Cloudflare, AWS WAF, DataDome, and the checks of Reddit, Yandex and Expedia Group) or a blocking status, when a page comes back nearly empty because JavaScript builds it, or when JSON mode finds the data only after JavaScript runs. Captchas that no registered solver can pass end the wait at once.
+- **A ladder of fetchers**: plain HTTP with curl's Chrome fingerprint (`curl_cffi`), the same with its Safari fingerprint, then Playwright Chromium, then Patchright Chromium (a Playwright fork patched against automation detection) for sites that still block the browser. A request moves up when it meets a bot check (Cloudflare, AWS WAF, DataDome, and the checks of Reddit, Yandex and Expedia Group) or a blocking status, when a page comes back nearly empty because JavaScript builds it, or when JSON mode finds the data only after JavaScript runs. Captchas that no registered solver can pass end the wait at once.
 - **Site strategies**: every site gets a permanent record of what works there and of every setting used to scrape it. The scraper fills it in as it goes; values set by hand are pinned and never changed. A route that fails falls back to the others in the same request. See [Site strategies](#site-strategies).
 - **Per-key bot-check cookies**: cookies from a passed bot check are kept per API key for up to 4 hours, so later pages from that site load over plain HTTP (IMDb title pages in about 1.5 s). One key's cookies are never sent for another key. Cookies that plain HTTP was blocked with aren't reused, and Akamai Bot Manager's aren't kept at all.
 - **Batch endpoint**: up to 50 URLs per call, 8 at a time per key, at most 4 per site at once. Failures are reported per URL.
@@ -65,7 +65,8 @@ uvicorn scraper.app:app --reload
 | `IP_RATE_LIMIT`, `KEY_RATE_LIMITS` | limits for wrong keys and per key | `10/minute`, `300/minute;10000/day` |
 | `RATE_LIMIT_FAIL_OPEN` | allow requests while the rate-limit store is down | `on` |
 | `BROWSER_FALLBACK`, `BROWSER_WARM` | use the browser at all; start it at boot | `on`, `on` |
-| `BROWSER_ENGINE` | `playwright`, or `patchright` (a stealthier fork, installed separately) | `playwright` |
+| `BROWSER_ENGINE` | engine of the browser tier: `playwright`, or `patchright` (a stealthier fork) | `playwright` |
+| `STEALTH_BROWSER` | a Patchright tier after the browser, started on first use; needs `BROWSER_FALLBACK` | `on` |
 | `BROWSER_WORKERS`, `BATCH_WORKERS` | pages open at once; batch URLs at once per key | `2`, `8` |
 | `STRATEGY_DB` | the SQLite file holding every site's strategy | `data/strategies.db` |
 | `ADMIN_KEYS` | comma-separated keys that may edit site strategies | none |
@@ -81,7 +82,7 @@ fly ssh console -C "chown scraper /data"
 
 Until the `chown`, scraping works with the default settings and the log says the store can't be written.
 
-**Tests** run offline, with no network, Redis or browser: `pytest`. `pytest -m browser` adds the tests that drive a local Chromium.
+**Tests** run offline, with no network, Redis or browser: `pytest`. `pytest -m browser` adds the tests that drive a local Chromium, once with Playwright and once with Patchright.
 
 ## Project layout
 
