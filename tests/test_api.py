@@ -156,7 +156,12 @@ def test_strategies_need_an_api_key_to_read_and_the_admin_key_to_edit(client, tm
     assert [site["site"] for group in groups for site in group["sites"]] == ["shop.example"]
     pins = {"pins": {"start": "browser"}}
     assert client.put("/api/sites/shop.example/pins", json=pins, headers={"X-Admin-Key": "test-key"}).status_code == 401
-    assert client.put("/api/sites/shop.example/pins", json={"pins": {"speed": 1}}, headers=ADMIN).status_code == 400
+    for wrong in ('{"speed": 1}', '{"load_timeout": 0}', '{"fetch_budget": Infinity}'):  # Python's JSON allows it
+        body = f'{{"pins": {wrong}}}'
+        response = client.put(
+            "/api/sites/shop.example/pins", content=body, headers={**ADMIN, "content-type": "application/json"}
+        )
+        assert response.status_code == 400
     assert client.put("/api/sites/shop.example/pins", json=pins, headers=ADMIN).status_code == 200
     assert strategies.strategy_for("shop.example", "http").start == "browser"
     assert client.get("/sites").status_code == 200
