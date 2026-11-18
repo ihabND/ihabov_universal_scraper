@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import math
 import time
 from urllib.parse import urljoin
 
@@ -36,26 +37,33 @@ class HttpFetcher:
         self, guard: EgressGuard, *, name: str = "http", impersonate: str = "chrome", retries: int | None = None
     ):  # retries=None: as many as the site's strategy says, which a site that starts here always gets
         self.guard, self.name, self.impersonate, self.retries = guard, name, impersonate, retries
-        self.session: AsyncSession | None = None
+        self.sessions: dict[int, AsyncSession] = {}  # by stall limit
 
     async def start(self) -> None:
-        # discard_cookies: one session serves every caller, so cookies are passed per fetch instead.
-        self.session = AsyncSession(
-            impersonate=self.impersonate,
-            discard_cookies=True,
-            # Timeouts are set per request: session options would override them.
-            curl_options={CurlOpt.MAXFILESIZE_LARGE: MAX_CONTENT_BYTES},
-        )
+        """Sessions open on first use."""
 
     async def stop(self) -> None:
-        if self.session is not None:
-            await self.session.close()
-            self.session = None
+        sessions, self.sessions = self.sessions, {}
+        for session in sessions.values():
+            await session.close()
+
+    def session(self, stall_seconds: int) -> AsyncSession:
+        """curl_cffi takes a stall limit only as a session option, so each site's request timeout gets a session."""
+        if stall_seconds not in self.sessions:
+            # discard_cookies: one session serves every caller, so cookies are passed per fetch instead.
+            self.sessions[stall_seconds] = AsyncSession(
+                impersonate=self.impersonate,
+                discard_cookies=True,
+                curl_options={
+                    CurlOpt.LOW_SPEED_LIMIT: 1,  # a connection that sends nothing this long is stalled, and retried
+                    CurlOpt.LOW_SPEED_TIME: stall_seconds,
+                    CurlOpt.MAXFILESIZE_LARGE: MAX_CONTENT_BYTES,
+                },
+            )
+        return self.sessions[stall_seconds]
 
     async def fetch(self, req: FetchRequest) -> Page:
         """Follows redirects by hand, so every hop is checked before it's requested."""
-        if self.session is None:
-            await self.start()
         strategy, cookies, earned = req.strategy, Cookies(), {}
         language = {} if strategy.locale == "en-US" else {"accept-language": accept_language(strategy.locale)}
         if req.clearance and req.clearance.plain_ok:
@@ -92,7 +100,7 @@ class HttpFetcher:
                 raise FetchError("The site took too long to respond.")
             response = error = None
             try:
-                response = await self.session.get(
+                response = await self.session(math.ceil(strategy.request_timeout)).get(
                     url,
                     timeout=(connect := min(strategy.request_timeout, remaining), remaining - connect),
                     allow_redirects=False,

@@ -3,6 +3,7 @@
 import http.server
 import itertools
 import threading
+import time
 
 import pytest
 
@@ -19,6 +20,7 @@ pytestmark = pytest.mark.anyio
 
 hits = {"challenge": 0}
 flaky = itertools.count()
+stalls = itertools.count()
 CHALLENGE = b"<html><title>Just a moment...</title><script>_cf_chl_opt={}</script></html>"
 
 
@@ -51,6 +53,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             "/echo": lambda: self.reply(f"cookie={self.headers.get('cookie')}".encode()),
             "/waf-403-json": lambda: self.reply(b'{"message": "blocked"}', 403, "application/json"),
         }
+        if self.path == "/stalls-once" and next(stalls) == 0:  # says nothing for 5 s, then hangs up
+            return time.sleep(5)
+        if self.path == "/stalls-once":
+            return self.reply(b"<html>awake</html>")
         if self.path == "/flaky":  # 503 twice, then the page
             return self.reply(status=503) if next(flaky) < 2 else self.reply(b"<html>finally</html>")
         if self.path == "/sets-cookie-then-loops" and "c=1" not in (self.headers.get("cookie") or ""):
@@ -133,9 +139,11 @@ async def test_refuses_pages_over_the_size_limit(fetcher, site, monkeypatch):
         await fetch(fetcher, site + "/huge")
 
 
-async def test_retries_temporary_errors(fetcher, site):
+async def test_retries_temporary_errors_and_stalls(fetcher, site):
     page = await fetch(fetcher, site + "/flaky")
     assert (page.status_code, page.content) == (200, b"<html>finally</html>")
+    stalled = Strategy(request_timeout=1, fetch_budget=4)  # a connection silent for 1 s is retried
+    assert (await fetch(fetcher, site + "/stalls-once", strategy=stalled)).content == b"<html>awake</html>"
 
 
 async def test_a_bot_check_is_returned_without_retries(fetcher, site):
@@ -167,7 +175,8 @@ async def test_a_site_s_own_retries_and_headers_are_used_and_its_headers_stay_wi
     assert hits["always-503"] == 1
     page = await fetch(fetcher, site + "/echo-header", strategy=Strategy(headers={"x-site": "1"}))
     assert page.content == b"x-site=1"
-    monkeypatch.setattr(urls, "is_public", lambda ip: ip in ("127.0.0.1", "::1"))
+    real = urls.resolve_public  # localhost without ::1, which Windows takes 2 s to refuse
+    monkeypatch.setattr(urls, "resolve_public", lambda host: real("127.0.0.1" if host == "localhost" else host))
     page = await fetch(fetcher, site + "/to-localhost", strategy=Strategy(headers={"x-site": "1"}))
     assert page.content == b"x-site=None"
 
