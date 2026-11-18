@@ -134,6 +134,7 @@
           <div class="strategy-actions">
             <button class="tool" type="button" data-save>Save pins</button>
             ${flags.length ? `<button class="tool" type="button" data-clear>Clear flags</button>` : ""}
+            <button class="tool" type="button" data-delete>Delete site</button>
           </div>
         </div>
       </details>`;
@@ -189,6 +190,10 @@
       const site = groups.flatMap((group) => group.sites).find((s) => s.site === name);
       const path = `/api/sites/${encodeURIComponent(name)}`;
       if (button.dataset.clear !== undefined) return change("DELETE", `${path}/flags`, undefined, `Cleared the flags of ${name}.`);
+      if (button.dataset.delete !== undefined) {
+        if (!confirm(`Delete ${name}? Its pins, learned values and counts are lost; its next scrape starts it afresh.`)) return;
+        return change("DELETE", path, undefined, `Deleted ${name}.`);
+      }
       let pins = { ...site.pins };
       if (button.dataset.unpin) delete pins[button.dataset.unpin];
       else if (button.dataset.pin) pins[button.dataset.pin] = site.settings.find((row) => row.name === button.dataset.pin).value;

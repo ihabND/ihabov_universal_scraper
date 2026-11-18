@@ -132,11 +132,15 @@ def learn(site: str, setting: str, value, evidence: str) -> None:
 
 
 def record_use(site: str, route: str, status: int, seconds: float, ok: bool) -> None:
+    """Only a success adds a site; a failure is counted on a site that's already kept."""
     last = json.dumps({"at": now_text(), "route": route, "status": status, "seconds": round(seconds, 2)})
+    if not ok:
+        execute("UPDATE sites SET last = ?, requests = requests + 1 WHERE site = ?", (last, site))
+        return
     execute(
-        "INSERT INTO sites (site, domain, last, requests, ok) VALUES (?, ?, ?, 1, ?) ON CONFLICT(site) DO UPDATE "
-        "SET last = excluded.last, requests = requests + 1, ok = ok + excluded.ok",
-        (site, domain_of(site), last, int(ok)),
+        "INSERT INTO sites (site, domain, last, requests, ok) VALUES (?, ?, ?, 1, 1) ON CONFLICT(site) DO UPDATE "
+        "SET last = excluded.last, requests = requests + 1, ok = ok + 1",
+        (site, domain_of(site), last),
     )
 
 
@@ -165,6 +169,10 @@ def set_pins(site: str, pins: dict) -> None:
 
 def clear_flags(site: str) -> None:
     execute("UPDATE sites SET flags = '{}' WHERE site = ?", (site,), strict=True)
+
+
+def delete(site: str) -> None:
+    execute("DELETE FROM sites WHERE site = ?", (site,), strict=True)
 
 
 def export_pins() -> dict[str, dict]:

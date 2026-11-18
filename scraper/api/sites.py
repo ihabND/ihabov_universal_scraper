@@ -96,3 +96,11 @@ async def clear_flags(request: Request, site: str, admin_key: str | None = Secur
     await authorize_admin(request, admin_key)
     strategies.clear_flags(site)
     return {"site": site}
+
+
+@router.delete("/{site}")
+async def delete_site(request: Request, site: str, admin_key: str | None = Security(admin_key_header)) -> dict:
+    """Forgets the site: its pins, what was learned, its flags and counts. A later scrape starts it afresh."""
+    await authorize_admin(request, admin_key)
+    strategies.delete(site)
+    return {"site": site}
