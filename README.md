@@ -10,10 +10,10 @@ A web-scraping API: send it any public URL and get back clean HTML, or structure
 
 ## Features
 
-- **Two output modes**: `html` returns the cleaned page; `json` returns structured fields on supported sites (books, products, recipes, movies and more), from site parsers and schema.org JSON-LD.
-- **A ladder of fetchers**: plain HTTP with a browser's TLS fingerprint (`curl_cffi`), then Playwright Chromium. A request moves up when it meets a bot check (Cloudflare, AWS WAF, DataDome) or a blocking status, or when JSON mode finds the data only after JavaScript runs.
+- **Two output modes**: `html` returns the cleaned page; `json` returns structured fields from site parsers (books, products, recipes, movies and more), and on any other page the structured data it carries for its own scripts (JSON-LD, Next.js data, YouTube's `ytInitialData`, initial state).
+- **A ladder of fetchers**: plain HTTP with curl's Chrome fingerprint (`curl_cffi`), the same with its Safari fingerprint, then Playwright Chromium. A request moves up when it meets a bot check (Cloudflare, AWS WAF, DataDome, and the checks of Reddit, Yandex and Expedia Group) or a blocking status, when a page comes back nearly empty because JavaScript builds it, or when JSON mode finds the data only after JavaScript runs. Captchas that no registered solver can pass end the wait at once.
 - **Site memory**: what worked on each site is remembered for a day, so the next request starts there. A remembered route that fails falls back to the others in the same request.
-- **Per-key bot-check cookies**: cookies from a passed bot check are kept per API key for up to 4 hours, so later pages from that site load over plain HTTP (IMDb title pages in about 1.5 s). One key's cookies are never sent for another key.
+- **Per-key bot-check cookies**: cookies from a passed bot check are kept per API key for up to 4 hours, so later pages from that site load over plain HTTP (IMDb title pages in about 1.5 s). One key's cookies are never sent for another key. Cookies that plain HTTP was blocked with aren't reused, and Akamai Bot Manager's aren't kept at all.
 - **Batch endpoint**: up to 50 URLs per call, 8 at a time per key, at most 4 per site at once. Failures are reported per URL.
 - **Caching**: fetched pages are cached in Redis for 10 minutes (30 s for errors), shared by both modes, and identical requests in flight share one fetch.
 - **Security**: keys compared in constant time; rate limits per IP before a key is accepted and per key after; every connection the scraper makes itself, the browser's included, passes a local egress guard that only connects to public addresses, which also covers redirects and DNS rebinding. With `PROXY_URL` set, traffic to sites outside `PROXY_BYPASS` goes to that proxy instead, which must not be able to reach your internal network.
@@ -37,6 +37,8 @@ curl -H "X-API-Key: $SCRAPER_API_KEY" \
 ### Sites with structured JSON parsers
 
 webscraper.io test cars · scrapeme.live · books.toscrape.com · quotes.toscrape.com · knjizare-vulkan.rs · iponcomp.com · allrecipes.com · imdb.com
+
+Any other page in JSON mode gives its embedded structured data, or a 502 when it has none.
 
 ## Run it
 
