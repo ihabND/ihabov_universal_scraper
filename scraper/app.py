@@ -12,6 +12,7 @@ from .core.errors import ScrapeError
 from .core.service import Scraper
 from .fetchers import build_tiers
 from .net.guard import EgressGuard
+from .store import cache
 from .web.views import STATIC_DIR
 from .web.views import router as web_router
 
@@ -34,6 +35,7 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         await app.state.scraper.stop()
+        await cache.close()
 
 
 app = FastAPI(title="Ihabov Universal Scraper", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)

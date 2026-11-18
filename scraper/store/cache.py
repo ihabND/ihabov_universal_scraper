@@ -4,6 +4,7 @@ Pages are cached in Redis only. Small JSON records (site profiles, bot-check coo
 this process's memory while Redis is off or paused.
 """
 
+import asyncio
 import json
 import logging
 import time
@@ -49,6 +50,11 @@ async def call(command: str, *args, **kwargs):
         return None
 
 
+async def close() -> None:
+    if client is not None:
+        await client.aclose()
+
+
 async def redis_status() -> str:
     if client is None:
         return "off"
@@ -66,7 +72,7 @@ async def get_page(url: str, browser: str) -> Page | None:
     if value is None:
         return None
     try:
-        header, content = zlib.decompress(value).split(b"\n", 1)
+        header, content = (await asyncio.to_thread(zlib.decompress, value)).split(b"\n", 1)
         return Page(content=content, **json.loads(header))
     except (zlib.error, ValueError, TypeError):
         return None
@@ -81,7 +87,7 @@ async def set_page(url: str, browser: str, page: Page) -> None:
         "fetched_with": page.fetched_with,
         "complete": page.complete,
     }
-    value = zlib.compress(json.dumps(header).encode() + b"\n" + page.content, 6)
+    value = await asyncio.to_thread(zlib.compress, json.dumps(header).encode() + b"\n" + page.content, 6)
     if len(value) <= MAX_CACHED_BYTES:
         await call("set", page_key(url, browser), value, ex=PAGE_SECONDS if page.ok else FAILED_PAGE_SECONDS)
 
