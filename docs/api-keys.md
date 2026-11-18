@@ -6,7 +6,7 @@ Every scrape needs a valid API key. Keys are handed out by hand: there is no sig
 
 - Valid keys are read from the `API_KEYS` environment variable, as a comma-separated list: `API_KEYS="key1,key2,key3"`.
 - On Fly.io, `API_KEYS` is a **secret**. It's encrypted, never in git, and passed to the app as an environment variable.
-- The check lives in `scraper/auth.py`. Keys are compared with `secrets.compare_digest`, so response timing doesn't reveal anything about a key.
+- The check lives in `scraper/api/deps.py`. Keys are compared with `secrets.compare_digest`, so response timing doesn't reveal anything about a key.
 - **The app fails closed:** if `API_KEYS` is empty or missing, every request is rejected with `401`.
 - The keys are loaded once when the app starts. After changing them, the app has to restart. `fly secrets set` does that automatically.
 
@@ -17,6 +17,8 @@ Every scrape needs a valid API key. Keys are handed out by hand: there is no sig
 | `GET /`       | Public. Shows the web form.                                            |
 | `POST /`      | The web form. Needs a valid key in the form's "API key" field.         |
 | `GET /scrape` | JSON API. Needs a valid key in the `X-API-Key` header.                 |
+| `POST /scrape/batch` | JSON API for up to 50 URLs. Same key header.                     |
+| `GET /health` | Public. Status of Redis, the browser and the proxy.                    |
 | `GET /docs`   | Public. The hand-written API docs page.                                |
 | `/redoc`, `/openapi.json` | FastAPI's generated docs are disabled (404).               |
 
@@ -97,7 +99,7 @@ Set the variable before starting the app:
 
 ```powershell
 $env:API_KEYS = "devkey"
-uvicorn main:app --reload
+uvicorn scraper.app:app --reload
 ```
 
 Then use `devkey` as the key at http://127.0.0.1:8000/.

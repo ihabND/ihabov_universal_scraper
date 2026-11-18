@@ -1,6 +1,6 @@
 # Universal Scraper API
 
-A web-scraping API: send it any public URL and get back clean HTML, or structured JSON for supported sites. Plain HTTP is tried first, and it falls back to a headless Chromium browser when a site's bot protection blocks plain requests.
+A web-scraping API: send it any public URL and get back clean HTML, or structured JSON for supported sites. Plain HTTP is tried first, and a headless Chromium takes over when a site's bot protection blocks plain requests.
 
 [![tests](https://github.com/ihabND/ihabov_universal_scraper/actions/workflows/tests.yml/badge.svg)](https://github.com/ihabND/ihabov_universal_scraper/actions/workflows/tests.yml) ![Python](https://img.shields.io/badge/python-3.12-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-009688) ![Redis](https://img.shields.io/badge/Redis-cache%20%26%20quotas-DC382D) ![license](https://img.shields.io/badge/license-MIT-lightgrey)
 
@@ -10,18 +10,13 @@ A web-scraping API: send it any public URL and get back clean HTML, or structure
 
 ## Features
 
-- **Two output modes**: `html` returns the cleaned page; `json` returns structured fields on supported sites (books, products, recipes, movies and more), using site parsers and schema.org JSON-LD.
-- **Automatic browser fallback**: it spots blocks (403/429/503, Cloudflare, AWS WAF and DataDome challenge pages) and retries in Playwright Chromium.
-- **Site memory**: the scraper keeps a profile per site, for 7 days in Redis, with what it has learned there: whether plain requests get bot-checked, and which parsers only find their data after JavaScript runs. Each request takes the route its site's profile points to: plain HTTP with this key's saved bot-check cookies, the browser first for sites that block plain requests, or plain HTTP with the browser as a fallback. In JSON mode, a parser that needs JavaScript goes straight to the browser. A remembered route that fails falls back to the other one within the same request, and each profile is re-checked in the background about once a day. Known sites like IMDb start out marked as blocking.
-- **Per-key bot-check cookies**: cookies from a passed bot check are kept per API key (hashed) for up to 4 hours, in Redis when it's configured, so they survive restarts and scale-to-zero. With them, IMDb title pages come back in about 1.5 s over plain HTTP. One key's cookies are never used for another key.
-- **Warm browsers**: both Chromium workers start in the background at boot, so the first browser request doesn't pay for starting one. `BROWSER_WARM=off` turns this off.
-- **Browser-grade HTTP**: `curl_cffi` with a current browser TLS fingerprint, request timeouts, a response-size cap, and a content-type check.
-- **Batch endpoint**: up to 50 URLs per call, run in parallel with per-site concurrency limits and spacing so no single site gets hammered. Failures are reported per URL.
-- **Caching**: Redis caches pages (10 min for successes, 30 s for errors). If Redis goes down, the API skips it for 30 s instead of timing out on every request.
-- **Security**:
-  - API keys are compared in constant time, and every request is refused if no keys are configured.
-  - Rate limits apply per IP before a key is accepted, and per key after.
-  - SSRF protection: every URL and every redirect hop is checked, so requests can't reach private, loopback or cloud-metadata addresses.
+- **Two output modes**: `html` returns the cleaned page; `json` returns structured fields on supported sites (books, products, recipes, movies and more), from site parsers and schema.org JSON-LD.
+- **A ladder of fetchers**: plain HTTP with a browser's TLS fingerprint (`curl_cffi`), then Playwright Chromium. A request moves up when it meets a bot check (Cloudflare, AWS WAF, DataDome) or a blocking status, or when JSON mode finds the data only after JavaScript runs.
+- **Site memory**: what worked on each site is remembered for a day, so the next request starts there. A remembered route that fails falls back to the others in the same request.
+- **Per-key bot-check cookies**: cookies from a passed bot check are kept per API key for up to 4 hours, so later pages from that site load over plain HTTP (IMDb title pages in about 1.5 s). One key's cookies are never sent for another key.
+- **Batch endpoint**: up to 50 URLs per call, 8 at a time per key, at most 4 per site at once. Failures are reported per URL.
+- **Caching**: fetched pages are cached in Redis for 10 minutes (30 s for errors), shared by both modes, and identical requests in flight share one fetch.
+- **Security**: keys compared in constant time; rate limits per IP before a key is accepted and per key after; every connection the scraper makes itself, the browser's included, passes a local egress guard that only connects to public addresses, which also covers redirects and DNS rebinding. With `PROXY_URL` set, traffic to sites outside `PROXY_BYPASS` goes to that proxy instead, which must not be able to reach your internal network.
 - **Web workbench** at `/` and hand-written API docs at `/docs`.
 
 ## Usage
@@ -35,53 +30,58 @@ curl -H "X-API-Key: $SCRAPER_API_KEY" \
 |---|---|---|
 | `url` | any public http(s) URL | required |
 | `mode` | `html`, `json` | `html` |
-| `browser` | `auto` (fallback when blocked), `never`, `always` | `auto` |
+| `browser` | `auto` (browser when needed), `never`, `always` | `auto` |
 
 `POST /scrape/batch` takes `{"urls": [...], "mode": "...", "browser": "..."}`. Python client example: [`examples/api_client.py`](examples/api_client.py).
 
 ### Sites with structured JSON parsers
 
-books.toscrape.com · quotes.toscrape.com · webscraper.io test cars · scrapeme.live · allrecipes.com · imdb.com · knjizare-vulkan.rs · iponcomp.com
+webscraper.io test cars · scrapeme.live · books.toscrape.com · quotes.toscrape.com · knjizare-vulkan.rs · iponcomp.com · allrecipes.com · imdb.com
 
 ## Run it
 
 ```bash
 python -m venv .venv && . .venv/bin/activate     # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-playwright install chromium                      # only needed for the browser fallback
+playwright install chromium                      # only needed for the browser
 export API_KEYS="devkey"                         # Windows PowerShell: $env:API_KEYS = "devkey"
-uvicorn main:app --reload
+uvicorn scraper.app:app --reload
 ```
 
-Set `REDIS_URL` to turn on shared caching and quotas, and to keep learned site strategies and bot-check cookies across restarts. Without it, the app runs on in-memory counters.
+| Setting | Meaning | Default |
+|---|---|---|
+| `API_KEYS` | comma-separated keys; without any, every request is refused | none |
+| `REDIS_URL` | page cache, shared quotas, site memory and cookies across restarts | in-memory |
+| `PROXY_URL` | send traffic out through a proxy (`http://user:password@host:port`) | direct |
+| `PROXY_BYPASS` | sites that skip the proxy | practice sites |
+| `IP_RATE_LIMIT`, `KEY_RATE_LIMITS` | limits for wrong keys and per key | `10/minute`, `300/minute;10000/day` |
+| `RATE_LIMIT_FAIL_OPEN` | allow requests while the rate-limit store is down | `on` |
+| `BROWSER_FALLBACK`, `BROWSER_WARM` | use the browser at all; start it at boot | `on`, `on` |
+| `BROWSER_ENGINE` | `playwright`, or `patchright` (a stealthier fork, installed separately) | `playwright` |
+| `BROWSER_WORKERS`, `BATCH_WORKERS` | pages open at once; batch URLs at once per key | `2`, `8` |
+| `TRUSTED_IP_HEADER` | header carrying the client IP from a trusted proxy (`Fly-Client-IP` on Fly) | none |
 
-Set `PROXY_URL` (`http://user:password@host:port`) to send both plain HTTP and browser requests out through a proxy. Data-center IPs, like a hosted server's, are often blocked, and a residential proxy usually gets through. `/health` shows whether a proxy is on. Practice sites built for scraping (toscrape.com, webscraper.io, scrapeme.live, example.com) skip the proxy so they don't use paid traffic; set `PROXY_BYPASS=site1.com,site2.org` to change that list.
+**Docker / Fly.io**: the `Dockerfile` installs Chromium and runs as a non-root user, and `fly.toml` deploys it with scale-to-zero and a health check. API keys are set with `fly secrets set API_KEYS=...` (see [`docs/api-keys.md`](docs/api-keys.md)).
 
-**Docker / Fly.io**: the multi-stage `Dockerfile` installs Chromium into a fixed path, and `fly.toml` deploys it with scale-to-zero. API keys are set with `fly secrets set API_KEYS=...` (see [`docs/api-keys.md`](docs/api-keys.md)).
-
-**Tests** (offline, no network or Redis needed):
-
-```bash
-pytest
-```
+**Tests** run offline, with no network, Redis or browser: `pytest`. `pytest -m browser` adds the tests that drive a local Chromium.
 
 ## Project layout
 
 ```
 scraper/
-  app.py         routes, auth and rate limiting
-  service.py     single + batch scraping, cache lookups
-  fetch.py       HTTP-first, browser-fallback orchestration
-  http_fetch.py  curl_cffi client, redirects, size and type checks
-  browser.py     Playwright Chromium fetches, queued
-  blocking.py    bot-check detection, per-key clearance cookies
-  profiles.py    per-site memory: blocking and JavaScript-rendering, daily re-check
-  parsers.py     per-site structured parsers
-  proxy.py       optional outgoing proxy for both fetch paths
-  urls.py        URL normalisation and SSRF guard
-  cache.py       Redis cache with graceful fallback
-  quota.py       per-IP and per-key limits
+  app.py        the FastAPI app and the scraper's lifetime
+  settings.py   every environment setting, read once
+  api/          routes, key check and rate limits, request/response models
+  web/          the workbench and docs pages
+  core/         scrape and batch (service.py), the fetcher ladder (ladder.py), Page, errors
+  fetchers/     plain HTTP and the browser; a new tier is a new class here
+  antibot/      bot-check detection, per-key cookies, the captcha-solver plug-in point
+  parsers/      one module per site, plus shared JSON-LD readers
+  store/        Redis cache, site memory, quotas
+  net/          URL checks, proxy choice, the egress guard
 ```
+
+Adding a site: write `scraper/parsers/<site>.py` with an `@parser(...)` function (or register a JSON-LD reader), import it in `parsers/__init__.py`, and save a page plus its expected output in `tests/fixtures/parsers/`.
 
 ## Stack
 

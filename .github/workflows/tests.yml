@@ -19,6 +19,6 @@ jobs:
         run: pip install -e ".[dev]"
       # The tests run offline: no real sites, no Redis server and no browser download needed.
       - name: Lint
-        run: ruff check .
+        run: ruff check . && ruff format --check .
       - name: Test
         run: pytest -q
