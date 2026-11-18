@@ -118,7 +118,7 @@
           <span class="tag">start: ${esc(start.value)} · ${esc(source(start))}</span>
           ${changed ? `<span class="tag changed">${changed} changed</span>` : ""}
           ${flags.length ? `<span class="tag flag">⚑ ${flags.length}</span>` : ""}
-          <span class="meta">last: ${esc(last)} · ${site.requests} requests, ${site.ok} ok</span>
+          <span class="meta">last: ${esc(last)} · ${site.requests} request${site.requests === 1 ? "" : "s"}, ${site.ok} ok</span>
         </summary>
         <div class="strategy-body">
           ${flags.length ? `<ul class="flags">${flags
