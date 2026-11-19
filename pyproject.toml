@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ihabov-universal-scraper"
+version = "1.0.0"
+description = "A web scraping API: any public page as clean HTML, or as structured JSON on supported sites, with a headless-browser fallback for sites that block plain requests."
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Ihab Novalic" }]
+requires-python = ">=3.12"
+# The pinned versions live in requirements.txt, which the Dockerfile installs from.
+dynamic = ["dependencies"]
+
+[project.optional-dependencies]
+dev = ["ruff==0.16.10", "pytest==9.1.1", "fakeredis==2.39.0", "httpx2==2.13.1"]
+
+[tool.setuptools.packages.find]
+include = ["scraper*"]
+
+[tool.setuptools.package-data]
+"scraper.web" = ["templates/*.html", "static/*"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-m 'not browser and not live'"
+markers = [
+    "browser: needs a local Chromium (pytest -m browser)",
+    "live: scrapes the real example pages (pytest -m live)",
+]
+# curl_cffi on Windows' default event loop adds a helper thread for socket events; nothing to fix.
+filterwarnings = ['ignore:\s*Proactor event loop does not implement add_reader']
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.format]
+exclude = ["*.md"]  # code blocks in the docs are written by hand
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, import order, modern syntax, likely bugs
+select = ["E", "W", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["scraper"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI declares parameters with calls in default arguments; that is its intended use.
+extend-immutable-calls = ["fastapi.Body", "fastapi.Form", "fastapi.Security", "fastapi.Depends"]

@@ -1,0 +1,59 @@
+{
+  "url": "https://www.allrecipes.com/recipe/10813/best-chocolate-chip-cookies/",
+  "parsed": {
+    "name": "Best Chocolate Chip Cookies",
+    "description": "This classic chocolate chip cookie recipe makes deliciously buttery cookies with crisp edges, chewy middles, and gooey chocolate chips in every bite.",
+    "author": [
+      "Dora"
+    ],
+    "rating": 4.6,
+    "rating_count": 19340,
+    "prep_minutes": 20,
+    "cook_minutes": 10,
+    "total_minutes": 30,
+    "yield": "4 dozen cookies",
+    "categories": [
+      "Dessert"
+    ],
+    "cuisine": [
+      "American"
+    ],
+    "ingredients": [
+      "1 cup butter, softened",
+      "1 cup white sugar",
+      "1 cup packed brown sugar",
+      "2 eggs",
+      "2 teaspoons vanilla extract",
+      "1 teaspoon baking soda",
+      "2 teaspoons hot water",
+      "0.5 teaspoon salt",
+      "3 cups all-purpose flour",
+      "2 cups semisweet chocolate chips",
+      "1 cup chopped walnuts"
+    ],
+    "instructions": [
+      "Gather your ingredients, making sure your butter is softened, and your eggs are room temperature.",
+      "Preheat the oven to 350 degrees F (175 degrees C). Beat butter, white sugar, and brown sugar together in a large bowl with an electric mixer until light and creamy, about 4 minutes.",
+      "Beat in eggs, one at a time, then stir in vanilla.",
+      "Dissolve baking soda in hot water; add to batter along with salt and mix until combined.",
+      "Stir in flour just until no dry streaks remain. Fold in chocolate chips and walnuts, if using, until evenly distributed.",
+      "Drop rounded 1 ½-tablespoon portions of dough 2 inches apart onto ungreased baking sheets, using a medium cookie scoop if desired.",
+      "Bake in the preheated oven until the edges are lightly browned and the centers are just set, about 10 minutes.",
+      "Let the cookies cool briefly on the baking sheets, then transfer them to a wire rack to cool completely.",
+      "Serve or store cooled cookies in an airtight container."
+    ],
+    "nutrition": {
+      "calories": "146 kcal",
+      "carbohydrateContent": "19 g",
+      "cholesterolContent": "10 mg",
+      "fiberContent": "1 g",
+      "proteinContent": "2 g",
+      "saturatedFatContent": "4 g",
+      "sodiumContent": "76 mg",
+      "fatContent": "8 g",
+      "unsaturatedFatContent": "0 g"
+    },
+    "image": "https://www.allrecipes.com/thmb/8xwaWAHtl_QLij6D-G0Z4B1HDVA=/1500x0/filters:no_upscale():max_bytes(150000):strip_icc()/10813-best-chocolate-chip-cookies-mfs-146-4x3-b108aceffa6043a1ac81c3c5a9b034c8.jpg",
+    "date_published": "1998-04-18"
+  }
+}

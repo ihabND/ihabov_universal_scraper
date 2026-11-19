@@ -1,0 +1,39 @@
+{
+  "url": "https://webscraper.io/test-sites/product/bmw-e24-635csi-1954-c002",
+  "parsed": {
+    "brand": "BMW",
+    "model": "E24 635CSi",
+    "year": 1954,
+    "engine": "I4",
+    "drivetrain": "RWD",
+    "power_hp": 122,
+    "country": "Germany",
+    "mileage_km": 189886,
+    "condition": "Driver",
+    "exterior_color": "Silver",
+    "interior_color": "Red",
+    "body": "Hatchback",
+    "price_eur": 18457,
+    "availability": "Reserved",
+    "rating": 3,
+    "seller": "Classic Car Garage",
+    "transmission": [
+      "Manual",
+      "Semi-automatic",
+      "Automatic"
+    ],
+    "tags": [
+      "Restored",
+      "Rare",
+      "Classic",
+      "German"
+    ],
+    "colors": [
+      "Red",
+      "Black",
+      "Silver",
+      "Blue"
+    ],
+    "image": "https://webscraper.io/images/test-sites-cars/BMW-E24-635CSi-1954-1.avif"
+  }
+}

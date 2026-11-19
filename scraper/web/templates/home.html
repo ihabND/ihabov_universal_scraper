@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% set page = "home" %}
+{% block body_class %}home{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ asset_url('home.css') }}">{% endblock %}
+{% block content %}
+<main class="h-wrap h-split">
+  <div class="h-left">
+    <section class="h-intro">
+      <h1>Any web page in, <em>clean data</em> out.</h1>
+      <p>A scraping API that gets past bot checks and learns what works on every site. Try it on an example page.</p>
+      <div class="h-badges">
+        <span class="h-badge"><b aria-hidden="true">●</b> live on Fly.io</span>
+        {% if test_key %}<span class="h-badge">test key included</span>{% endif %}
+      </div>
+    </section>
+
+    {% if hosted %}
+    <aside class="h-local" aria-label="Runs better locally">
+      <b>Works much better run locally</b>
+      <p>This hosted demo has no scraping proxy right now, so sites that block data-center IPs can fail here. Run it on your own machine for the full scraper.</p>
+      <a href="https://github.com/ihabND/ihabov_universal_scraper#run-it">How to run it locally →</a>
+    </aside>
+    {% endif %}
+
+    {% if test_key %}
+    <form class="h-box h-req" id="ask" aria-label="Try it" data-test-key="{{ test_key }}" data-limit="{{ test_key_limits }}">
+      <div class="h-ask">
+        <input id="url" aria-label="Page URL" spellcheck="false" autocomplete="off" inputmode="url">
+        <button class="h-run" id="go" type="submit">Scrape <kbd>Ctrl ↵</kbd></button>
+      </div>
+      <div class="h-row">
+        <span class="h-label">Examples</span>
+        <span class="h-row" id="chips"></span>
+      </div>
+      <button class="h-opts-btn" id="opts-btn" type="button" aria-expanded="false" aria-controls="opts">Options</button>
+      <div class="h-opts" id="opts" hidden>
+        <div class="h-opt">Output
+          <div class="h-seg" data-opt="mode"><button type="button" data-v="json" aria-pressed="true">JSON</button><button type="button" data-v="html" aria-pressed="false">HTML</button></div>
+        </div>
+        <div class="h-opt">Headless browser
+          <div class="h-seg" data-opt="browser"><button type="button" data-v="auto" aria-pressed="true">Auto</button><button type="button" data-v="never" aria-pressed="false">Never</button><button type="button" data-v="always" aria-pressed="false">Always</button></div>
+        </div>
+        <div class="h-opt">API key<small>The test key is filled in: example sites only, {{ test_key_limits }} per visitor.</small></div>
+      </div>
+    </form>
+    {% else %}
+    <div class="h-box h-req"><p class="h-off">The live demo is off on this server.</p></div>
+    {% endif %}
+
+    <section class="h-box h-ladder" aria-label="How the scraper got this page">
+      <span class="h-lead">How it got the page</span>
+      <div class="h-steps">
+        <div class="h-step" data-step="1"><i>1</i><span>Plain HTTP</span></div>
+        <div class="h-step" data-step="2"><i>2</i><span>Safari fingerprint</span></div>
+        <div class="h-step" data-step="3"><i>3</i><span>Headless browser</span></div>
+        <div class="h-step" data-step="4"><i>4</i><span>Stealth browser</span></div>
+      </div>
+      <p class="h-note" id="ladder-note"></p>
+    </section>
+
+    <section class="h-cards">
+      <article class="h-box h-card">
+        <h2>Learns each site</h2>
+        <p>The first visit finds the cheapest way in; later requests start there, and a daily check tries cheaper again.</p>
+        <dl class="h-mini" aria-label="Where each site starts">
+          <dt>imdb.com</dt><dd>browser</dd>
+          <dt id="mini-site">webscraper.io</dt><dd id="mini-step">plain HTTP</dd>
+        </dl>
+      </article>
+      <article class="h-box h-card">
+        <h2>Built for production</h2>
+        <ul class="h-ticks">
+          <li>Rate limits per key and per IP</li>
+          <li>Egress guard: never reaches private networks</li>
+          <li>Redis cache, shared in-flight requests</li>
+          <li>Tests run on every push</li>
+        </ul>
+      </article>
+      <article class="h-box h-card wide">
+        <h2>Under the hood</h2>
+        <div class="h-stack"><span>Python</span><span>FastAPI</span><span>curl_cffi</span><span>Playwright</span><span>Patchright</span><span>Redis</span><span>SQLite</span><span>Docker</span><span>Fly.io</span></div>
+        <a class="h-more" href="https://github.com/ihabND/ihabov_universal_scraper">Read the code on GitHub →</a>
+      </article>
+    </section>
+  </div>
+
+  <section class="h-box h-res" aria-label="Response">
+    <div class="h-resbar" aria-live="polite">
+      <span class="h-pill" id="code">200</span>
+      <span class="h-meta" id="meta"></span>
+      <div class="h-tabs" role="tablist">
+        <button type="button" role="tab" data-tab="raw" aria-selected="true">JSON</button>
+        <button type="button" role="tab" data-tab="code" aria-selected="false">Code</button>
+      </div>
+    </div>
+    {# Without JavaScript this stays: the stored response, as plain text. #}
+    <div class="h-pane" id="pane"><pre id="plain">{{ example | replace("\\u003c", "<") }}</pre></div>
+  </section>
+</main>
+
+<footer class="h-wrap h-footer">
+  <span>Built by Ihab Novalić</span>
+  <nav><a href="https://github.com/ihabND/ihabov_universal_scraper">GitHub</a><a href="/docs">API docs</a></nav>
+</footer>
+<script type="application/json" id="example">{{ example | safe }}</script>
+{% endblock %}
+{% block scripts %}<script src="{{ asset_url('home.js') }}" defer></script>{% endblock %}

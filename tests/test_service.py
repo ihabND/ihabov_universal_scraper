@@ -1,0 +1,165 @@
+import asyncio
+import time
+from itertools import pairwise
+
+import pytest
+
+from scraper.antibot.clearance import Clearance, save_clearance
+from scraper.core.errors import BrowserDisabledError
+from scraper.core.page import Page
+from scraper.core.service import Scraper, SiteGate
+from scraper.net.guard import EgressGuard
+from scraper.net.urls import site_of
+from scraper.store import cache, strategies
+
+pytestmark = pytest.mark.anyio
+
+QUOTES = "https://quotes.toscrape.com/page/2/"
+QUOTE_HTML = b'<div class="quote"><span class="text">Hi</span><small class="author">Ann</small></div>'
+
+
+class SlowHttp:
+    """Answers every URL with the quotes page after `delay`, and tracks how many fetches overlap."""
+
+    name, renders, status = "http", False, "ready"
+
+    def __init__(self, delay: float = 0.0):
+        self.delay, self.urls, self.running, self.most_at_once, self.cookies = delay, [], 0, 0, []
+
+    async def fetch(self, req):
+        self.urls.append(req.url)
+        self.cookies.append(req.clearance)
+        self.running += 1
+        self.most_at_once = max(self.most_at_once, self.running)
+        await asyncio.sleep(self.delay)
+        self.running -= 1
+        return Page(req.url, 200, QUOTE_HTML)
+
+
+@pytest.fixture
+def http():
+    return SlowHttp()
+
+
+@pytest.fixture
+def scraper(http):
+    return Scraper([http], EgressGuard())
+
+
+async def test_html_and_json_share_one_fetch(scraper, http, redis):
+    assert (await scraper.scrape(QUOTES, "json")).parsed == [{"quote": "Hi", "author": "Ann", "tags": []}]
+    assert "Ann" in (await scraper.scrape(QUOTES, "html")).content
+    await scraper.scrape(QUOTES, "json")
+    assert http.urls == [QUOTES]
+
+
+async def test_a_cut_short_browser_page_is_not_reused_for_html(scraper, http, redis):
+    await cache.set_page(QUOTES, "auto", Page(QUOTES, 200, QUOTE_HTML, "browser", complete=False))
+    await scraper.scrape(QUOTES, "json")
+    assert http.urls == []
+    await scraper.scrape(QUOTES, "html")
+    assert http.urls == [QUOTES]
+
+
+async def test_identical_requests_at_the_same_time_fetch_once(scraper, http):
+    http.delay = 0.05
+    results = await asyncio.gather(*(scraper.scrape(QUOTES) for _ in range(45)))
+    assert http.urls == [QUOTES] and len({r.content for r in results}) == 1
+
+
+async def test_a_cancelled_caller_does_not_cancel_the_fetch_for_the_others(scraper, http):
+    http.delay = 0.05
+    first = asyncio.create_task(scraper.scrape(QUOTES))
+    second = asyncio.create_task(scraper.scrape(QUOTES))
+    await asyncio.sleep(0.01)
+    first.cancel()
+    assert (await second).ok and http.urls == [QUOTES]
+
+
+async def test_json_on_a_site_without_a_parser_reads_the_page_s_structured_data(scraper, http, monkeypatch):
+    page = b'<title>T</title><script id="__NEXT_DATA__" type="application/json">{"props": {}}</script>'
+    monkeypatch.setattr(http, "fetch", lambda req: _page(req.url, page))
+    assert (await scraper.scrape("https://example.com/", "json")).parsed == {"title": "T", "next_data": {"props": {}}}
+
+
+async def _page(url: str, content: bytes) -> Page:
+    return Page(url, 200, content)
+
+
+async def test_browser_always_without_a_browser_is_refused(scraper):
+    with pytest.raises(BrowserDisabledError):
+        await scraper.scrape(QUOTES, browser="always")
+
+
+async def test_a_batch_keeps_order_reports_errors_per_url_and_fetches_duplicates_once(scraper, http):
+    urls = ["https://example.com/a", "ftp://example.com/", "https://Example.com/a"]
+    batch = await scraper.batch(urls, "html", "auto", owner="alice")
+    assert [r.url for r in batch.results] == urls
+    assert [r.status for r in batch.results] == [200, 400, 200]
+    assert (batch.succeeded, batch.failed) == (2, 1)
+    assert http.urls == ["https://example.com/a"]
+
+
+async def test_one_key_s_batch_runs_a_limited_number_of_urls_at_once(scraper, http, monkeypatch):
+    monkeypatch.setattr("scraper.core.service.settings.batch_workers", 2)
+    http.delay = 0.02
+    await Scraper([http], EgressGuard()).batch([f"https://site{i}.example/" for i in range(6)], "html", "auto", "alice")
+    assert http.most_at_once == 2
+
+
+async def test_the_site_gate_spaces_out_requests_to_one_site_and_forgets_it_after():
+    gate, starts = SiteGate(), []
+
+    async def visit():
+        async with gate("https://shop.example/a", 4, 0.05):
+            starts.append(time.monotonic())
+
+    await asyncio.gather(visit(), visit(), visit())
+    assert all(b - a >= 0.04 for a, b in pairwise(starts))
+    assert gate.sites == {}
+
+
+async def test_a_key_s_cookies_never_ride_along_on_another_key_s_shared_or_batched_scrape(scraper, http):
+    await save_clearance("alice", "quotes.toscrape.com", Clearance([{"name": "c", "value": "x"}], {}))
+    http.delay = 0.05
+    await asyncio.gather(scraper.scrape(QUOTES, owner="bob"), scraper.scrape(QUOTES, owner="alice"))
+    await scraper.batch(["https://quotes.toscrape.com/page/3/"], "html", "auto", owner="bob")
+    assert http.cookies == [None, None]  # bob's scrape was shared with alice, never the other way round
+
+
+def test_plain_http_with_the_safari_fingerprint_comes_before_the_browser_and_stealth_after_it():
+    from scraper.fetchers import build_tiers
+
+    tiers = build_tiers(EgressGuard())
+    assert [tier.name for tier in tiers] == ["http", "http-safari", "browser", "stealth"]
+    assert tiers[-1].warm is False  # a second Chromium only once a site needs it
+
+
+def test_stealth_is_left_out_when_patchright_is_missing(monkeypatch):
+    from scraper.fetchers import build_tiers
+
+    monkeypatch.setattr("scraper.fetchers.find_spec", lambda name: None if name == "patchright" else object())
+    assert [tier.name for tier in build_tiers(EgressGuard())] == ["http", "http-safari", "browser"]
+
+
+class Plain:
+    renders, status = False, "ready"
+
+    def __init__(self, name: str, impersonate: str, blocked_on: str = ""):
+        self.name, self.impersonate, self.blocked_on = name, impersonate, blocked_on
+
+    async def fetch(self, req):
+        return Page(req.url, 403 if site_of(req.url) == self.blocked_on else 200, QUOTE_HTML)
+
+
+async def test_the_daily_check_updates_a_learned_start_and_flags_a_pinned_one():
+    scraper = Scraper([Plain("http", "chrome", "c.example"), Plain("http-safari", "safari")], EgressGuard())
+    strategies.learn("a.example", "start", "browser", "http got 403")
+    strategies.set_pins("b.example", {"start": "browser"})
+    strategies.learn("c.example", "start", "browser", "http-safari got 503")  # a site only Safari gets through
+    for site in ("a.example", "b.example", "c.example"):
+        await scraper.check(f"https://{site}/", site, None, strategies.strategy_for(site, "http"))
+    assert strategies.strategy_for("a.example", "http").start == "http"
+    assert strategies.strategy_for("b.example", "http").start == "browser"
+    assert "daily check" in strategies.get("b.example").flags["start"]["seen"]
+    assert strategies.strategy_for("c.example", "http").start == "http-safari"

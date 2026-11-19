@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% set page = "sites" %}
+{% block title %}Sites · Ihabov Scraper{% endblock %}
+{% block content %}
+<div class="page">
+  <div class="strategies" id="strategies">
+    <span class="eyebrow">Site strategies</span>
+    <h1>Sites <span class="count" id="site-count"></span></h1>
+    <p class="lede">Every site the scraper has fetched and the settings it uses there. Learned values fill in by themselves; a value you set is pinned, and the scraper never changes it. When a check disagrees with a pin, the site gets a flag.</p>
+
+    <form class="keys" id="keys">
+      <label class="field"><span>API key, to view</span>
+        <input class="input" id="key" type="password" autocomplete="off" placeholder="paste your key">
+      </label>
+      <label class="field"><span>Admin key, to edit</span>
+        <input class="input" id="admin-key" type="password" autocomplete="off" placeholder="only needed to edit">
+      </label>
+      <button class="run" type="submit">Load</button>
+    </form>
+
+    <div class="toolbar">
+      <input class="input" id="filter" type="search" placeholder="Filter by site or domain" aria-label="Filter">
+      <button class="tool" type="button" id="export">Export JSON</button>
+      <label class="tool">Import pins<input type="file" id="import" accept="application/json,.json" hidden></label>
+    </div>
+    <p class="hint" id="sites-status" role="status">Enter your API key to see the sites. Keys stay in this browser.</p>
+    <div id="sites"></div>
+  </div>
+</div>
+{% endblock %}

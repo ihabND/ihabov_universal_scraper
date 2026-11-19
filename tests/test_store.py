@@ -1,0 +1,165 @@
+import time
+
+import pytest
+from limits import parse_many
+from redis.exceptions import TimeoutError as RedisTimeout
+
+from scraper.core.page import Page
+from scraper.store import cache, quota, strategies
+
+pytestmark = pytest.mark.anyio
+
+URL = "https://quotes.toscrape.com/page/2/"
+
+
+async def test_pages_are_stored_compressed_with_a_ttl(redis):
+    page = Page(URL, 200, b"<html>" + b"<p>same text</p>" * 1000 + b"</html>", "browser", complete=False)
+    await cache.set_page(URL, "auto", page)
+    assert await cache.get_page(URL, "auto") == page
+    key = cache.page_key(URL, "auto")
+    assert 590 < await cache.client.ttl(key) <= 600
+    assert len(await cache.client.get(key)) < len(page.content) / 10
+
+
+async def test_error_pages_expire_after_30_seconds(redis):
+    await cache.set_page(URL, "auto", Page(URL, 404, b"<html>gone</html>"))
+    assert 0 < await cache.client.ttl(cache.page_key(URL, "auto")) <= 30
+
+
+async def test_records_live_in_memory_without_redis():
+    await cache.set_json("site:shop.example", {"tier": "browser"}, 600)
+    assert await cache.get_json("site:shop.example") == {"tier": "browser"}
+    assert await cache.get_page(URL, "auto") is None
+
+
+async def test_records_go_to_memory_while_redis_is_paused(redis, monkeypatch):
+    monkeypatch.setattr(cache, "paused_until", time.monotonic() + 30)
+    await cache.set_json("site:shop.example", {"tier": "browser"}, 600)
+    assert await cache.get_json("site:shop.example") == {"tier": "browser"}
+
+
+async def test_a_redis_error_pauses_redis(redis):
+    redis.connected = False
+    assert await cache.get_json("site:shop.example") is None
+    assert await cache.redis_status() == "paused"
+
+
+async def test_wrong_keys_are_limited_per_ip():
+    results = [await quota.take(quota.IP_LIMITS, "ip", "1.2.3.4") for _ in range(11)]
+    assert results[:10] == [None] * 10
+    limit, reset_at = results[10]
+    assert limit == "10 per 1 minute" and reset_at > time.time()
+
+
+async def test_a_charge_that_does_not_fit_is_refused_whole(monkeypatch):
+    limits = parse_many("3/minute")
+    assert await quota.take(limits, "key", "k", cost=4) is not None
+    assert await quota.take(limits, "key", "k", cost=3) is None  # nothing was used by the refused charge
+    assert await quota.take(limits, "key", "k") is not None
+
+
+class BrokenLimiter:
+    def __init__(self):
+        self.calls = 0
+
+    async def test(self, *args, **kwargs):
+        self.calls += 1
+        raise ConnectionError("Redis is down")
+
+
+async def test_a_rate_limit_store_failure_pauses_redis_and_later_requests_skip_it(monkeypatch):
+    monkeypatch.setattr(quota.settings, "redis_url", "redis://localhost:1")
+    monkeypatch.setattr(cache, "client", object())  # configured, so "available" depends on the pause
+    monkeypatch.setattr(cache, "paused_until", 0.0)
+    limiter = BrokenLimiter()
+    monkeypatch.setattr(quota, "limiter", limiter)
+    assert await quota.take(quota.KEY_LIMITS, "key", "k") is None  # fails open by default
+    assert await quota.take(quota.KEY_LIMITS, "key", "k") is None
+    assert limiter.calls == 2 and not cache.available()  # one retry, then the pause skips the store
+
+
+async def test_one_redis_timeout_is_retried_instead_of_pausing_redis(redis, monkeypatch):
+    # The first command after a cold start can time out while the connection is still being set up.
+    await cache.set_json("site:shop.example", {"start": "http"}, ttl=60)
+    real_get = cache.client.get
+    failures = [RedisTimeout("Timeout reading from upstash")]
+
+    async def cold_get(*args, **kwargs):
+        if failures:
+            raise failures.pop()
+        return await real_get(*args, **kwargs)
+
+    monkeypatch.setattr(cache.client, "get", cold_get)
+    assert await cache.get_json("site:shop.example") == {"start": "http"}
+    assert cache.available()
+
+
+class ColdLimiter:
+    """A rate-limit store whose first call times out, like a connection that is still opening."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def test(self, *args, **kwargs):
+        self.calls += 1
+        if self.calls == 1:
+            raise TimeoutError("Timeout reading from upstash")
+        return True
+
+    async def hit(self, *args, **kwargs):
+        return True
+
+
+async def test_one_rate_limit_store_timeout_is_retried_instead_of_pausing(monkeypatch):
+    monkeypatch.setattr(quota.settings, "redis_url", "redis://localhost:1")
+    monkeypatch.setattr(cache, "client", object())
+    monkeypatch.setattr(cache, "paused_until", 0.0)
+    monkeypatch.setattr(quota, "limiter", ColdLimiter())
+    assert await quota.take(quota.TEST_IP_LIMITS, "test", "1.2.3.4", fail_open=False) is None  # the demo isn't paused
+    assert cache.available()
+
+
+async def test_warming_retries_a_cold_redis_until_it_answers(redis, monkeypatch):
+    real_ping = cache.client.ping
+    failures = [RedisTimeout("cold"), RedisTimeout("cold")]
+    pings = []
+
+    async def cold_ping(*args, **kwargs):
+        pings.append(1)
+        if failures:
+            raise failures.pop()
+        return await real_ping(*args, **kwargs)
+
+    monkeypatch.setattr(cache.client, "ping", cold_ping)
+    await cache.warm()
+    assert len(pings) == 3 and cache.available()
+
+
+async def test_warming_opens_the_rate_limit_stores_connection(monkeypatch):
+    checked = []
+
+    class Storage:
+        async def check(self):
+            checked.append(1)
+            return True
+
+    class Limiter:
+        storage = Storage()
+
+    monkeypatch.setattr(quota, "limiter", Limiter())
+    await quota.warm()
+    assert checked == [1]
+
+
+def test_pins_beat_learned_values_which_beat_defaults_and_everything_survives_reopening():
+    strategies.learn("shop.example", "start", "browser", "plain HTTP got 403 (cloudflare)")
+    strategies.set_pins("shop.example", {"start": "http", "render_wait": 8})
+    strategies.learn("shop.example", "start", "browser", "plain HTTP got 403 again")  # disagrees with the pin
+    strategies.close()
+    record = strategies.get("shop.example")
+    assert record.site == "shop.example" and record.learned["start"]["value"] == "browser"
+    assert record.flags["start"]["seen"] == "plain HTTP got 403 again"
+    strategy = strategies.strategy_for("shop.example", seed_start="http")
+    assert (strategy.start, strategy.render_wait, strategy.retries) == ("http", 8, 2)
+    strategies.set_pins("safari.example", {"fingerprints": ["safari", "chrome"]})
+    assert strategies.strategy_for("safari.example", seed_start="http").start == "http-safari"
