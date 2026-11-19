@@ -150,6 +150,12 @@ def test_the_home_page_moved_the_workbench(client):
     assert 'id="scrape-form"' in client.get("/workbench").text and 'id="scrape-form"' not in client.get("/").text
 
 
+def test_only_the_hosted_home_page_suggests_running_locally(client, monkeypatch):
+    assert 'class="h-local"' not in client.get("/").text
+    monkeypatch.setenv("FLY_APP_NAME", "ihabov-universal-scraper")
+    assert 'class="h-local"' in client.get("/").text
+
+
 def test_the_front_page_lists_sites_in_registration_order():
     from scraper.web.views import SITE_CARDS
 

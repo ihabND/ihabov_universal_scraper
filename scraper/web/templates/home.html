@@ -14,6 +14,14 @@
       </div>
     </section>
 
+    {% if hosted %}
+    <aside class="h-local" aria-label="Runs better locally">
+      <b>Works much better run locally</b>
+      <p>This hosted demo has no scraping proxy right now, so sites that block data-center IPs can fail here. Run it on your own machine for the full scraper.</p>
+      <a href="https://github.com/ihabND/ihabov_universal_scraper#run-it">How to run it locally →</a>
+    </aside>
+    {% endif %}
+
     {% if test_key %}
     <form class="h-box h-req" id="ask" aria-label="Try it" data-test-key="{{ test_key }}" data-limit="{{ test_key_limits }}">
       <div class="h-ask">

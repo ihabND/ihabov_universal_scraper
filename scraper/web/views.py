@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -52,7 +53,13 @@ SITE_CARDS = site_cards()
 async def home(request: Request):
     if "url" in request.query_params:  # an old workbench link
         return RedirectResponse(f"/workbench?{request.url.query}", 307)
-    context = {"test_key": settings.test_key, "test_key_limits": settings.test_key_limits, "example": EXAMPLE}
+    context = {
+        "test_key": settings.test_key,
+        "test_key_limits": settings.test_key_limits,
+        "example": EXAMPLE,
+        # Fly sets FLY_APP_NAME; the hosted demo has no proxy, so it points visitors to a local run.
+        "hosted": bool(os.environ.get("FLY_APP_NAME")),
+    }
     return templates.TemplateResponse(request, "home.html", context)
 
 
